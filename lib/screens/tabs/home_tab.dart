@@ -9,7 +9,8 @@ import '../../widgets/app_widgets.dart';
 
 class HomeTab extends StatefulWidget {
   final Session session;
-  const HomeTab({super.key, required this.session});
+  final VoidCallback? onViewOrders;
+  const HomeTab({super.key, required this.session, this.onViewOrders});
 
   @override
   State<HomeTab> createState() => _HomeTabState();
@@ -64,7 +65,10 @@ class _HomeTabState extends State<HomeTab> {
               ),
             );
           }
-          return _DashboardBody(dashboard: snap.data!);
+          return _DashboardBody(
+            dashboard: snap.data!,
+            onViewOrders: widget.onViewOrders,
+          );
         },
       ),
     );
@@ -89,7 +93,8 @@ class _CenteredListView extends StatelessWidget {
 
 class _DashboardBody extends StatelessWidget {
   final RetailerDashboard dashboard;
-  const _DashboardBody({required this.dashboard});
+  final VoidCallback? onViewOrders;
+  const _DashboardBody({required this.dashboard, this.onViewOrders});
 
   @override
   Widget build(BuildContext context) {
@@ -116,20 +121,20 @@ class _DashboardBody extends StatelessWidget {
           const SizedBox(height: 14),
           _BannerCarousel(banners: d.banners),
         ],
+        const SizedBox(height: 28),
+        _SectionHeader(title: 'Latest Approved Orders', onViewAll: onViewOrders),
+        const SizedBox(height: 14),
+        _LatestOrders(orders: d.latestOrders),
+        const SizedBox(height: 28),
+        _SectionHeader(title: 'Pending Payments', onViewAll: onViewOrders),
+        const SizedBox(height: 14),
+        _PendingPayments(payments: d.pendingPayments),
         if (d.quickActions.isNotEmpty) ...[
           const SizedBox(height: 28),
           const _SectionTitle('Quick Actions'),
           const SizedBox(height: 14),
           _QuickActions(actions: d.quickActions),
         ],
-        const SizedBox(height: 28),
-        const _SectionTitle('Latest Approved Orders'),
-        const SizedBox(height: 14),
-        _LatestOrders(orders: d.latestOrders),
-        const SizedBox(height: 28),
-        const _SectionTitle('Pending Payments'),
-        const SizedBox(height: 14),
-        _PendingPayments(payments: d.pendingPayments),
         const SizedBox(height: 12),
       ],
     );
@@ -959,6 +964,34 @@ class _SectionTitle extends StatelessWidget {
         fontWeight: FontWeight.w700,
         color: AppColors.text,
       ),
+    );
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final VoidCallback? onViewAll;
+  const _SectionHeader({required this.title, this.onViewAll});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(child: _SectionTitle(title)),
+        TextButton(
+          onPressed: onViewAll,
+          style: TextButton.styleFrom(
+            foregroundColor: AppColors.blue,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            minimumSize: const Size(0, 32),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          child: const Text(
+            'View All',
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -68,7 +68,10 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     final pages = <Widget>[
-      HomeTab(session: widget.session),
+      HomeTab(
+        session: widget.session,
+        onViewOrders: () => setState(() => _index = 2),
+      ),
       const CatalogTab(),
       const OrdersTab(),
       SettingsTab(session: widget.session),
