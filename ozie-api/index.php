@@ -30,6 +30,13 @@ $routes = [
     // --- profile
     'GET  v1/profile/get'            => 'v1/profile/get.php',
     'POST v1/profile/update'         => 'v1/profile/update.php',
+
+    // --- retailer
+    'GET  v1/retailer/products'      => 'v1/retailer/products.php',
+    'POST v1/retailer/products'      => 'v1/retailer/products.php',
+    'GET  v1/retailer/review-orders' => 'v1/retailer/review_orders.php',
+    'POST v1/retailer/review-orders' => 'v1/retailer/review_orders.php',
+    'GET  v1/retailer/orders'        => 'v1/retailer/orders.php',
 ];
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';

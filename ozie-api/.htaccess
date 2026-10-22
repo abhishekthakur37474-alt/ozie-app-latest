@@ -9,11 +9,6 @@ RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteRule ^ index.php [QSA,L]
 # Disable ModSecurity rules that block POST/JSON requests
-<IfModule mod_security2.c>
-    SecRuleEngine Off
-    SecFilterEngine Off
-    SecFilterScanPOST Off
-</IfModule>
 # Never serve config directly
 <Files "config.php">
     Require all denied
