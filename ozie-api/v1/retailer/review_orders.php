@@ -11,6 +11,25 @@ if (!defined('OZIE_API')) {
     exit('Direct access not permitted.');
 }
 
+// ── 0. Response Compatibility Wrapper ──────────────────────
+if (!function_exists('success')) {
+    function success($data = [], $message = 'Success', $code = 200) {
+        if (function_exists('ok')) {
+            ok($data, $message, $code);
+        } else {
+            http_response_code($code);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+                'success' => true,
+                'message' => $message,
+                'data'    => $data,
+                'errors'  => null
+            ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+    }
+}
+
 // ── 1. Database Connection Resolver ───────────────────────
 $db = null;
 if (function_exists('db')) {
@@ -596,7 +615,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || !empty($action)) {
             safe_exec($db, "INSERT INTO notifications (user_id, type, message, related_id, is_read, created_at) VALUES (?, 'manufacturer', ?, ?, 0, NOW())", [(int)$m['id'], $msg, $order_id]);
         }
 
-        success([
+        ok([
             'order_id'       => $order_id,
             'invoice_status' => 'Approved',
             'payment_status' => 'Pending'
@@ -616,7 +635,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || !empty($action)) {
         safe_exec($db, "UPDATE retailer_orders SET invoice_status = 'Rejected', payment_status = 'Cancelled', updated_at = NOW() WHERE id = ?", [$order_id]);
         safe_exec($db, "DELETE FROM order_applied_schemes WHERE order_id = ?", [$order_id]);
 
-        success(['order_id' => $order_id], "Order #$order_id has been rejected and stock restored.");
+        ok(['order_id' => $order_id], "Order #$order_id has been rejected and stock restored.");
     }
 
     // 3. DELETE ENTIRE ORDER
@@ -632,7 +651,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || !empty($action)) {
         safe_exec($db, "DELETE FROM retailer_order_details WHERE order_id = ?", [$order_id]);
         safe_exec($db, "DELETE FROM retailer_orders WHERE id = ? AND user_id = ?", [$order_id, $retailer_id]);
 
-        success(['order_id' => $order_id], "Order #$order_id deleted successfully and stock restored.");
+        ok(['order_id' => $order_id], "Order #$order_id deleted successfully and stock restored.");
     }
 
     // 4. DELETE SPECIFIC PRODUCT FROM ORDER
@@ -659,7 +678,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || !empty($action)) {
             $new_total = (float)($total_row['new_total'] ?? 0);
             safe_exec($db, "UPDATE retailer_orders SET total = ? WHERE id = ?", [$new_total, $order_id]);
 
-            success(['order_id' => $order_id, 'detail_id' => $detail_id, 'new_total' => $new_total], "Product removed from order and stock restored.");
+            ok(['order_id' => $order_id, 'detail_id' => $detail_id, 'new_total' => $new_total], "Product removed from order and stock restored.");
         }
         fail('Product item not found in order.', 404);
     }
@@ -676,7 +695,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || !empty($action)) {
         $subtotal = 0.0;
         $stock_errors = [];
 
-        // Support array of {detail_id, quantity} or associative array [detail_id => quantity]
         $normalizedQty = [];
         if (is_array($qtyInput)) {
             foreach ($qtyInput as $k => $v) {
@@ -698,7 +716,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || !empty($action)) {
 
             if (!$row) continue;
 
-            // Skip free items
             if ((float)$row['product_price'] == 0 && strpos($row['product_name'], '[FREE') !== false) {
                 continue;
             }
@@ -731,21 +748,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || !empty($action)) {
                 }
             }
 
-            // Recalculate free units and scheme entries
             updateFreeProductQuantity($db, $order_id, $pid, $new_quantity, $retailer_id, $retailer_category);
             recheckAndApplySchemes($db, $order_id, $pid, $new_quantity, $retailer_id, $retailer_category);
         }
 
         safe_exec($db, "UPDATE retailer_orders SET total = ? WHERE id = ?", [$subtotal, $order_id]);
 
-        success([
+        ok([
             'order_id'     => $order_id,
             'subtotal'     => $subtotal,
             'stock_errors' => $stock_errors
         ], empty($stock_errors) ? 'Quantity & schemes updated successfully.' : 'Some items capped to maximum stock.');
     }
 
-    // 6. REAL-TIME ITEM PREVIEW (Matches AJAX update_product)
+    // 6. REAL-TIME ITEM PREVIEW
     if ($action === 'preview_item') {
         $detail_id    = (int)($input['detail_id'] ?? 0);
         $new_quantity = (int)($input['quantity'] ?? 1);
@@ -774,7 +790,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || !empty($action)) {
         $benefits   = calculateSchemeBenefits($db, $product_id, $new_quantity, $price, $retailer_category, $retailer_id);
         $schemes    = getApplicableSchemesWithMessages($db, $product_id, $new_quantity, $price, $retailer_category, $retailer_id);
 
-        success([
+        ok([
             'detail_id'         => $detail_id,
             'quantity'          => $new_quantity,
             'line_total'        => $line_total,
@@ -953,7 +969,7 @@ foreach ($history_rows as $ord) {
 }
 
 // ── 9. Return Unified JSON Response ───────────────────────
-success([
+ok([
     'retailer' => [
         'id'              => $retailer_id,
         'name'            => $retailer_name,

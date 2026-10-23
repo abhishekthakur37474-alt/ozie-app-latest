@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -56,7 +58,25 @@ class ApiClient {
     await _storage.delete(key: _tokenKey);
   }
 
-  Future<Map<String, dynamic>> get(String path) => _send('GET', path);
+  /// Appends filters as `&k=v` so they do not wipe `?route=` on the base URL.
+  String _withQuery(String path, Map<String, dynamic>? query) {
+    if (query == null || query.isEmpty) return path;
+    final parts = <String>[];
+    query.forEach((k, v) {
+      if (v == null) return;
+      final s = '$v';
+      if (s.isEmpty) return;
+      parts.add('${Uri.encodeQueryComponent(k)}=${Uri.encodeQueryComponent(s)}');
+    });
+    if (parts.isEmpty) return path;
+    return '$path&${parts.join('&')}';
+  }
+
+  Future<Map<String, dynamic>> get(
+    String path, {
+    Map<String, dynamic>? query,
+  }) =>
+      _send('GET', _withQuery(path, query));
 
   Future<Map<String, dynamic>> post(
     String path, {
@@ -80,8 +100,25 @@ class ApiClient {
           headers: (auth && hasToken) ? {'Authorization': 'Bearer $_token'} : null,
         ),
       );
-      final data = res.data;
-      if (data is Map<String, dynamic>) return data;
+      var data = res.data;
+      if (data is String && data.isNotEmpty) {
+        try {
+          data = jsonDecode(data);
+        } catch (_) {}
+      }
+      if (data is Map) {
+        final map = Map<String, dynamic>.from(data);
+        if (map['success'] == false) {
+          throw ApiException(
+            (map['message'] as String?) ?? 'Request failed.',
+            statusCode: res.statusCode,
+            errors: map['errors'] is Map
+                ? Map<String, dynamic>.from(map['errors'] as Map)
+                : null,
+          );
+        }
+        return map;
+      }
       throw ApiException('Unexpected server response.');
     } on DioException catch (e) {
       final code = e.response?.statusCode;

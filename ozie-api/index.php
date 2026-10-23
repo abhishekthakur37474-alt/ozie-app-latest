@@ -1,7 +1,5 @@
 <?php
 // ozie-api router.
-// Base URL: https://demo.orderezee.com/ozie-api/v1/auth/login
-// Fallback (if server blocks pretty URLs / ModSecurity): https://demo.orderezee.com/ozie-api/index.php?route=v1/auth/login
 define('OZIE_API', true);
 require __DIR__ . '/core/bootstrap.php';
 
@@ -37,6 +35,37 @@ $routes = [
     'GET  v1/retailer/review-orders' => 'v1/retailer/review_orders.php',
     'POST v1/retailer/review-orders' => 'v1/retailer/review_orders.php',
     'GET  v1/retailer/orders'        => 'v1/retailer/orders.php',
+    'GET  v1/retailer/scan-order'    => 'v1/retailer/scan_order.php',
+    'POST v1/retailer/scan-order'    => 'v1/retailer/scan_order.php',
+    'GET  v1/retailer/loan-applications' => 'v1/retailer/loan_application.php',
+    'POST v1/retailer/loan-applications' => 'v1/retailer/loan_application.php',
+    'GET  v1/retailer/packing-orders'    => 'v1/retailer/packing_orders.php',
+    'GET  v1/retailer/dispatch-history'  => 'v1/retailer/dispatch_history.php',
+    'POST v1/retailer/dispatch-history'  => 'v1/retailer/dispatch_history.php',
+    'GET  v1/retailer/received-history' => 'v1/retailer/received_history.php',
+    'GET  v1/retailer/returns'          => 'v1/retailer/returns.php',
+    'POST v1/retailer/returns'          => 'v1/retailer/returns.php',
+    'GET  v1/retailer/schemes'          => 'v1/retailer/schemes.php',
+    'GET  v1/retailer/pending-payments' => 'v1/retailer/pending_payments.php',
+    'POST v1/retailer/pending-payments' => 'v1/retailer/pending_payments.php',
+    'GET  v1/retailer/invoices'         => 'v1/retailer/invoices.php',
+    'GET  v1/retailer/reports'          => 'v1/retailer/reports.php',
+    'GET  v1/retailer/return-history'   => 'v1/retailer/return_history.php',
+    'POST v1/retailer/return-history'   => 'v1/retailer/return_history.php',
+    'GET  v1/retailer/invoice-view'      => 'v1/retailer/invoice_view.php',
+    'GET  v1/retailer/notifications'     => 'v1/retailer/notifications.php',
+    'POST v1/retailer/notifications'     => 'v1/retailer/notifications.php',
+    'GET  v1/retailer/support-tickets'   => 'v1/retailer/support_tickets.php',
+    'POST v1/retailer/support-tickets'   => 'v1/retailer/support_tickets.php',
+    'GET  v1/profile/profile'            => 'v1/profile/profile.php',
+    'POST v1/profile/profile'            => 'v1/profile/profile.php',
+    'GET  v1/retailer/cart'      => 'v1/retailer/cart.php',
+    'POST v1/retailer/cart'      => 'v1/retailer/cart.php',
+    'GET  v1/retailer/checkout'  => 'v1/retailer/checkout.php',
+    'POST v1/retailer/checkout'  => 'v1/retailer/checkout.php',
+    'GET  v1/retailer/banners'   => 'v1/retailer/banners.php',
+    'POST v1/retailer/banners'   => 'v1/retailer/banners.php',
+    'POST v1/salesman/location'  => 'v1/salesman/location.php',
 ];
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -46,17 +75,15 @@ if ($method === 'OPTIONS') {
     exit;
 }
 
-// 1) ?route=... (works even when pretty URLs are blocked)  2) real URL path
 $route = isset($_GET['route']) && is_string($_GET['route']) ? $_GET['route'] : '';
 $path  = trim($route, '/');
 if ($path === '') {
-    $path = request_path();
+    $path = function_exists('request_path') ? request_path() : '';
 }
 if ($path === 'index.php') {
     $path = '';
 }
 
-// Health check: no login, no DB. Use it to test that the API is reachable.
 if ($path === 'v1/ping' && $method === 'GET') {
     ok(['time' => date('c'), 'php' => PHP_VERSION], 'pong');
 }
@@ -81,4 +108,9 @@ if (!is_file($handler)) {
     fail('This endpoint is not installed on the server.', 501);
 }
 
-require $handler;
+// Trap any fatal error so you get the exact line and message instead of 500
+try {
+    require $handler;
+} catch (\Throwable $e) {
+    fail($e->getMessage() . ' in ' . basename($e->getFile()) . ':' . $e->getLine(), 500);
+}

@@ -5,12 +5,19 @@ import 'package:flutter/material.dart';
 import '../../core/api_client.dart';
 import '../../core/dashboard_service.dart';
 import '../../core/models.dart';
+import '../../core/retailer_service.dart';
 import '../../widgets/app_widgets.dart';
 
 class HomeTab extends StatefulWidget {
   final Session session;
   final VoidCallback? onViewOrders;
-  const HomeTab({super.key, required this.session, this.onViewOrders});
+  final VoidCallback? onViewCatalog;
+  const HomeTab({
+    super.key,
+    required this.session,
+    this.onViewOrders,
+    this.onViewCatalog,
+  });
 
   @override
   State<HomeTab> createState() => _HomeTabState();
@@ -23,6 +30,7 @@ class _HomeTabState extends State<HomeTab> {
   void initState() {
     super.initState();
     _future = DashboardService.getRetailer();
+    RetailerService.getProducts(limit: 12);
   }
 
   Future<void> _refresh() async {
@@ -68,6 +76,7 @@ class _HomeTabState extends State<HomeTab> {
           return _DashboardBody(
             dashboard: snap.data!,
             onViewOrders: widget.onViewOrders,
+            onViewCatalog: widget.onViewCatalog,
           );
         },
       ),
@@ -94,7 +103,12 @@ class _CenteredListView extends StatelessWidget {
 class _DashboardBody extends StatelessWidget {
   final RetailerDashboard dashboard;
   final VoidCallback? onViewOrders;
-  const _DashboardBody({required this.dashboard, this.onViewOrders});
+  final VoidCallback? onViewCatalog;
+  const _DashboardBody({
+    required this.dashboard,
+    this.onViewOrders,
+    this.onViewCatalog,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -133,7 +147,11 @@ class _DashboardBody extends StatelessWidget {
           const SizedBox(height: 28),
           const _SectionTitle('Quick Actions'),
           const SizedBox(height: 14),
-          _QuickActions(actions: d.quickActions),
+          _QuickActions(
+            actions: d.quickActions,
+            onViewOrders: onViewOrders,
+            onViewCatalog: onViewCatalog,
+          ),
         ],
         const SizedBox(height: 12),
       ],
@@ -667,16 +685,49 @@ class _SchemeStripTile extends StatelessWidget {
 
 class _QuickActions extends StatelessWidget {
   final List<DashboardQuickAction> actions;
-  const _QuickActions({required this.actions});
+  final VoidCallback? onViewOrders;
+  final VoidCallback? onViewCatalog;
+  const _QuickActions({
+    required this.actions,
+    this.onViewOrders,
+    this.onViewCatalog,
+  });
 
   static const Map<String, IconData> _icons = {
+    'catalog': Icons.storefront_outlined,
+    'store': Icons.storefront_outlined,
+    'orders': Icons.receipt_long_outlined,
+    'cart': Icons.shopping_bag_outlined,
+    'reports': Icons.bar_chart_rounded,
+    'analytics': Icons.analytics_outlined,
+    'payments': Icons.payments_outlined,
+    'card': Icons.credit_card_outlined,
+    'create_order': Icons.mic_none_rounded,
+    'camera': Icons.photo_camera_outlined,
+    'returns': Icons.assignment_return_outlined,
     'approve_orders': Icons.check_circle_outline,
     'pack_orders': Icons.inventory_2_outlined,
     'dispatch': Icons.local_shipping_outlined,
     'invoice': Icons.receipt_long_outlined,
-    'returns': Icons.assignment_return_outlined,
     'stock_check': Icons.warehouse_outlined,
   };
+
+  IconData _iconFor(DashboardQuickAction a) {
+    return _icons[a.key] ?? _icons[a.icon ?? ''] ?? Icons.grid_view_outlined;
+  }
+
+  void _tap(BuildContext context, DashboardQuickAction a) {
+    switch (a.key) {
+      case 'catalog':
+        onViewCatalog?.call();
+        return;
+      case 'orders':
+        onViewOrders?.call();
+        return;
+      default:
+        showStatus(context, '${a.label} - coming soon');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -693,14 +744,14 @@ class _QuickActions extends StatelessWidget {
           height: 100,
           child: InkWell(
             borderRadius: BorderRadius.circular(12),
-            onTap: () => showStatus(context, '${a.label} - coming soon'),
+            onTap: () => _tap(context, a),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Icon(
-                    _icons[a.key] ?? Icons.grid_view_outlined,
+                    _iconFor(a),
                     size: 34,
                     color: AppColors.blue,
                   ),

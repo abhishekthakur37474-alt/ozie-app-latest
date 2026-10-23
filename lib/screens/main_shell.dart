@@ -21,6 +21,8 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _index = 0;
+  bool _catalogReady = false;
+  bool _ordersReady = false;
 
   static const List<String> _titles = ['Home', 'Catalog', 'View Orders', 'Settings'];
 
@@ -67,14 +69,34 @@ class _MainShellState extends State<MainShell> {
 
   @override
   Widget build(BuildContext context) {
+    if (_index == 1) _catalogReady = true;
+    if (_index == 2) _ordersReady = true;
+
     final pages = <Widget>[
       HomeTab(
         session: widget.session,
-        onViewOrders: () => setState(() => _index = 2),
+        onViewCatalog: () => setState(() {
+          _catalogReady = true;
+          _index = 1;
+        }),
+        onViewOrders: () => setState(() {
+          _ordersReady = true;
+          _index = 2;
+        }),
       ),
-      const CatalogTab(),
-      const OrdersTab(),
-      SettingsTab(session: widget.session),
+      _catalogReady ? const CatalogTab() : const SizedBox.shrink(),
+      _ordersReady ? const OrdersTab() : const SizedBox.shrink(),
+      SettingsTab(
+        session: widget.session,
+        onViewCatalog: () => setState(() {
+          _catalogReady = true;
+          _index = 1;
+        }),
+        onViewOrders: () => setState(() {
+          _ordersReady = true;
+          _index = 2;
+        }),
+      ),
     ];
 
     return PopScope(
@@ -143,7 +165,11 @@ class _MainShellState extends State<MainShell> {
             borderRadius: BorderRadius.circular(20),
             child: NavigationBar(
               selectedIndex: _index,
-              onDestinationSelected: (i) => setState(() => _index = i),
+              onDestinationSelected: (i) => setState(() {
+                if (i == 1) _catalogReady = true;
+                if (i == 2) _ordersReady = true;
+                _index = i;
+              }),
               backgroundColor: AppColors.card,
               surfaceTintColor: Colors.transparent,
               indicatorColor: Colors.transparent,

@@ -15,7 +15,14 @@ class _MenuItem {
 
 class SettingsTab extends StatelessWidget {
   final Session session;
-  const SettingsTab({super.key, required this.session});
+  final VoidCallback? onViewCatalog;
+  final VoidCallback? onViewOrders;
+  const SettingsTab({
+    super.key,
+    required this.session,
+    this.onViewCatalog,
+    this.onViewOrders,
+  });
 
   Future<void> _confirmLogout(BuildContext context) async {
     final yes = await showDialog<bool>(
@@ -121,8 +128,8 @@ class SettingsTab extends StatelessWidget {
           MaterialPageRoute<void>(builder: (_) => const ProfileScreen()),
         );
       }),
-      _MenuItem(Icons.grid_view_rounded, 'My Catalog', soon('My Catalog')),
-      _MenuItem(Icons.receipt_long_outlined, 'View Orders', soon('View Orders')),
+      _MenuItem(Icons.grid_view_rounded, 'My Catalog', onViewCatalog ?? soon('My Catalog')),
+      _MenuItem(Icons.receipt_long_outlined, 'View Orders', onViewOrders ?? soon('View Orders')),
       _MenuItem(Icons.account_balance_wallet_outlined, 'Ozie Finance', soon('Ozie Finance')),
       _MenuItem(Icons.inventory_2_outlined, 'Packing', soon('Packing')),
       _MenuItem(Icons.local_shipping_outlined, 'Dispatch', soon('Dispatch')),

@@ -227,12 +227,12 @@ List<T> _toList<T>(dynamic v, T Function(Map<String, dynamic>) build) {
   if (v is! List) return const [];
   return v
       .whereType<Map>()
-      .map((e) => build(e.cast<String, dynamic>()))
+      .map((e) => build(Map<String, dynamic>.from(e)))
       .toList();
 }
 
 Map<String, dynamic> _asMap(dynamic v) =>
-    v is Map ? v.cast<String, dynamic>() : const <String, dynamic>{};
+    v is Map ? Map<String, dynamic>.from(v) : const <String, dynamic>{};
 
 /// Response of GET v1/dashboard/retailer.
 class RetailerDashboard {
@@ -554,17 +554,556 @@ class DashboardQuickAction {
   final String key;
   final String label;
   final String? web;
+  final String? icon;
+  final String? subtitle;
+  final String? route;
 
   const DashboardQuickAction({
     required this.key,
     required this.label,
     this.web,
+    this.icon,
+    this.subtitle,
+    this.route,
   });
 
   factory DashboardQuickAction.fromJson(Map<String, dynamic> j) =>
       DashboardQuickAction(
         key: _toStr(j['key']) ?? '',
-        label: _toStr(j['label']) ?? '',
+        label: _toStr(j['label']) ?? _toStr(j['title']) ?? '',
         web: _toStr(j['web']),
+        icon: _toStr(j['icon']),
+        subtitle: _toStr(j['subtitle']),
+        route: _toStr(j['route']),
+      );
+}
+
+class PageInfo {
+  final int currentPage;
+  final int limit;
+  final int totalItems;
+  final int totalPages;
+  final bool hasNextPage;
+  final bool hasPrevPage;
+
+  const PageInfo({
+    this.currentPage = 1,
+    this.limit = 15,
+    this.totalItems = 0,
+    this.totalPages = 1,
+    this.hasNextPage = false,
+    this.hasPrevPage = false,
+  });
+
+  factory PageInfo.fromJson(Map<String, dynamic> j) => PageInfo(
+        currentPage: _toInt(j['current_page']),
+        limit: _toInt(j['limit']),
+        totalItems: _toInt(j['total_items'] ?? j['total_products'] ?? j['total_history']),
+        totalPages: _toInt(j['total_pages']),
+        hasNextPage: j['has_next_page'] == true,
+        hasPrevPage: j['has_prev_page'] == true,
+      );
+}
+
+class ProductScheme {
+  final int id;
+  final String schemeTitle;
+  final String schemeType;
+  final int minQty;
+  final int buyQty;
+  final int freeQty;
+  final double discountPercent;
+  final String? giftName;
+
+  const ProductScheme({
+    required this.id,
+    this.schemeTitle = '',
+    this.schemeType = '',
+    this.minQty = 0,
+    this.buyQty = 0,
+    this.freeQty = 0,
+    this.discountPercent = 0,
+    this.giftName,
+  });
+
+  factory ProductScheme.fromJson(Map<String, dynamic> j) => ProductScheme(
+        id: _toInt(j['id']),
+        schemeTitle: _toStr(j['scheme_title']) ?? '',
+        schemeType: _toStr(j['scheme_type']) ?? '',
+        minQty: _toInt(j['min_qty']),
+        buyQty: _toInt(j['buy_qty']),
+        freeQty: _toInt(j['free_qty']),
+        discountPercent: _toDouble(j['discount_percent']),
+        giftName: _toStr(j['gift_name']),
+      );
+}
+
+class ProductCategory {
+  final int id;
+  final String name;
+
+  const ProductCategory({required this.id, required this.name});
+
+  factory ProductCategory.fromJson(Map<String, dynamic> j) => ProductCategory(
+        id: _toInt(j['id']),
+        name: _toStr(j['name']) ?? '',
+      );
+}
+
+class ProductItem {
+  final int id;
+  final String sku;
+  final String name;
+  final String brand;
+  final int categoryId;
+  final String? photoUrl;
+  final String unitSize;
+  final int units;
+  final String packingType;
+  final double mrpCase;
+  final double billingCase;
+  final int discountPct;
+  final int stock;
+  final int cartQuantity;
+  final int availableStock;
+  final String availabilityStatus;
+  final bool isAvailable;
+  final bool canPurchase;
+  final bool isOutOfStock;
+  final bool isLowStock;
+  final bool isInWishlist;
+  final bool hasScheme;
+  final int selectableLimit;
+  final List<ProductScheme> schemes;
+
+  const ProductItem({
+    required this.id,
+    this.sku = '',
+    this.name = '',
+    this.brand = '',
+    this.categoryId = 0,
+    this.photoUrl,
+    this.unitSize = '',
+    this.units = 0,
+    this.packingType = '',
+    this.mrpCase = 0,
+    this.billingCase = 0,
+    this.discountPct = 0,
+    this.stock = 0,
+    this.cartQuantity = 0,
+    this.availableStock = 0,
+    this.availabilityStatus = 'Available',
+    this.isAvailable = true,
+    this.canPurchase = true,
+    this.isOutOfStock = false,
+    this.isLowStock = false,
+    this.isInWishlist = false,
+    this.hasScheme = false,
+    this.selectableLimit = 0,
+    this.schemes = const [],
+  });
+
+  factory ProductItem.fromJson(Map<String, dynamic> j) => ProductItem(
+        id: _toInt(j['id']),
+        sku: _toStr(j['sku']) ?? '',
+        name: _toStr(j['name']) ?? '',
+        brand: _toStr(j['brand']) ?? '',
+        categoryId: _toInt(j['category_id']),
+        photoUrl: _toStr(j['photo_url']),
+        unitSize: _toStr(j['unit_size']) ?? '',
+        units: _toInt(j['units']),
+        packingType: _toStr(j['packing_type']) ?? '',
+        mrpCase: _toDouble(j['mrp_case']),
+        billingCase: _toDouble(j['billing_case']),
+        discountPct: _toInt(j['discount_pct']),
+        stock: _toInt(j['stock']),
+        cartQuantity: _toInt(j['cart_quantity']),
+        availableStock: _toInt(j['available_stock']),
+        availabilityStatus: _toStr(j['availability_status']) ?? 'Available',
+        isAvailable: j['is_available'] != false,
+        canPurchase: j['can_purchase'] != false,
+        isOutOfStock: j['is_out_of_stock'] == true,
+        isLowStock: j['is_low_stock'] == true,
+        isInWishlist: j['is_in_wishlist'] == true,
+        hasScheme: j['has_scheme'] == true,
+        selectableLimit: _toInt(j['selectable_limit']),
+        schemes: _toList(j['schemes'], ProductScheme.fromJson),
+      );
+
+  ProductItem copyWith({
+    int? cartQuantity,
+    int? availableStock,
+    bool? isInWishlist,
+    bool? isOutOfStock,
+    bool? isLowStock,
+  }) {
+    final nextCart = cartQuantity ?? this.cartQuantity;
+    final nextAvail = availableStock ?? this.availableStock;
+    return ProductItem(
+      id: id,
+      sku: sku,
+      name: name,
+      brand: brand,
+      categoryId: categoryId,
+      photoUrl: photoUrl,
+      unitSize: unitSize,
+      units: units,
+      packingType: packingType,
+      mrpCase: mrpCase,
+      billingCase: billingCase,
+      discountPct: discountPct,
+      stock: stock,
+      cartQuantity: nextCart,
+      availableStock: nextAvail,
+      availabilityStatus: availabilityStatus,
+      isAvailable: isAvailable,
+      canPurchase: canPurchase,
+      isOutOfStock: isOutOfStock ?? this.isOutOfStock,
+      isLowStock: isLowStock ?? (nextAvail > 0 && nextAvail <= 5),
+      isInWishlist: isInWishlist ?? this.isInWishlist,
+      hasScheme: hasScheme,
+      selectableLimit: selectableLimit,
+      schemes: schemes,
+    );
+  }
+}
+
+class ProductsCatalog {
+  final String scopeNotice;
+  final int cartCount;
+  final int wishlistCount;
+  final List<ProductCategory> categories;
+  final List<String> brands;
+  final List<ProductItem> products;
+  final PageInfo pagination;
+
+  const ProductsCatalog({
+    this.scopeNotice = '',
+    this.cartCount = 0,
+    this.wishlistCount = 0,
+    this.categories = const [],
+    this.brands = const [],
+    this.products = const [],
+    this.pagination = const PageInfo(),
+  });
+
+  factory ProductsCatalog.fromJson(Map<String, dynamic> j) {
+    final brandsRaw = j['brands'];
+    return ProductsCatalog(
+      scopeNotice: _toStr(j['scope_notice']) ?? '',
+      cartCount: _toInt(j['cart_count']),
+      wishlistCount: _toInt(j['wishlist_count']),
+      categories: _toList(j['categories'], ProductCategory.fromJson),
+      brands: brandsRaw is List
+          ? brandsRaw.map((e) => e.toString()).where((e) => e.isNotEmpty).toList()
+          : const [],
+      products: _toList(j['products'], ProductItem.fromJson),
+      pagination: PageInfo.fromJson(_asMap(j['pagination'])),
+    );
+  }
+}
+
+class WishlistResult {
+  final int productId;
+  final bool isInWishlist;
+  final int wishlistCount;
+
+  const WishlistResult({
+    required this.productId,
+    required this.isInWishlist,
+    this.wishlistCount = 0,
+  });
+
+  factory WishlistResult.fromJson(Map<String, dynamic> j) => WishlistResult(
+        productId: _toInt(j['product_id']),
+        isInWishlist: j['is_in_wishlist'] == true,
+        wishlistCount: _toInt(j['wishlist_count']),
+      );
+}
+
+class AddToCartResult {
+  final int productId;
+  final int cartCount;
+  final int newCartQty;
+  final int availableStock;
+
+  const AddToCartResult({
+    required this.productId,
+    this.cartCount = 0,
+    this.newCartQty = 0,
+    this.availableStock = 0,
+  });
+
+  factory AddToCartResult.fromJson(Map<String, dynamic> j) => AddToCartResult(
+        productId: _toInt(j['product_id']),
+        cartCount: _toInt(j['cart_count']),
+        newCartQty: _toInt(j['new_cart_qty']),
+        availableStock: _toInt(j['available_stock']),
+      );
+}
+
+class ApprovedOrder {
+  final int id;
+  final String orderNumber;
+  final String? invoiceNumber;
+  final String shippingName;
+  final double total;
+  final String invoiceStatus;
+  final String paymentStatus;
+  final String paymentBadge;
+  final String paymentColor;
+  final String? createdAt;
+  final String? formattedDate;
+
+  const ApprovedOrder({
+    required this.id,
+    this.orderNumber = '',
+    this.invoiceNumber,
+    this.shippingName = '',
+    this.total = 0,
+    this.invoiceStatus = 'Approved',
+    this.paymentStatus = 'Pending',
+    this.paymentBadge = 'Pending',
+    this.paymentColor = 'warning',
+    this.createdAt,
+    this.formattedDate,
+  });
+
+  factory ApprovedOrder.fromJson(Map<String, dynamic> j) => ApprovedOrder(
+        id: _toInt(j['id'] ?? j['order_id']),
+        orderNumber: _toStr(j['order_number']) ?? '',
+        invoiceNumber: _toStr(j['invoice_number']),
+        shippingName: _toStr(j['shipping_name']) ?? '',
+        total: _toDouble(j['total']),
+        invoiceStatus: _toStr(j['invoice_status']) ?? 'Approved',
+        paymentStatus: _toStr(j['payment_status']) ?? 'Pending',
+        paymentBadge: _toStr(j['payment_badge']) ?? _toStr(j['payment_status']) ?? 'Pending',
+        paymentColor: _toStr(j['payment_color']) ?? 'warning',
+        createdAt: _toStr(j['created_at']),
+        formattedDate: _toStr(j['formatted_date']),
+      );
+
+  bool get isPaid => paymentStatus.toLowerCase() == 'paid';
+}
+
+class OrdersSummary {
+  final int totalOrders;
+  final double totalAmount;
+
+  const OrdersSummary({this.totalOrders = 0, this.totalAmount = 0});
+
+  factory OrdersSummary.fromJson(Map<String, dynamic> j) => OrdersSummary(
+        totalOrders: _toInt(j['total_orders']),
+        totalAmount: _toDouble(j['total_amount']),
+      );
+}
+
+class OrdersPage {
+  final OrdersSummary summary;
+  final List<ApprovedOrder> orders;
+  final PageInfo pagination;
+
+  const OrdersPage({
+    this.summary = const OrdersSummary(),
+    this.orders = const [],
+    this.pagination = const PageInfo(),
+  });
+
+  factory OrdersPage.fromJson(Map<String, dynamic> j) => OrdersPage(
+        summary: OrdersSummary.fromJson(_asMap(j['summary'])),
+        orders: _toList(j['orders'], ApprovedOrder.fromJson),
+        pagination: PageInfo.fromJson(_asMap(j['pagination'])),
+      );
+}
+
+class OrderSchemeInfo {
+  final String title;
+  final String message;
+  final String type;
+  final bool applied;
+  final int needed;
+
+  const OrderSchemeInfo({
+    this.title = '',
+    this.message = '',
+    this.type = '',
+    this.applied = false,
+    this.needed = 0,
+  });
+
+  factory OrderSchemeInfo.fromJson(Map<String, dynamic> j) => OrderSchemeInfo(
+        title: _toStr(j['title']) ?? '',
+        message: _toStr(j['message']) ?? '',
+        type: _toStr(j['type']) ?? '',
+        applied: j['applied'] == true,
+        needed: _toInt(j['needed']),
+      );
+}
+
+class DraftOrderItem {
+  final int id;
+  final int productId;
+  final String productName;
+  final double productPrice;
+  final int productQuantity;
+  final double productTotalprice;
+  final int availableStock;
+  final int maxAllowed;
+  final String stockClass;
+  final String stockLabel;
+  final bool isFree;
+  final List<OrderSchemeInfo> appliedSchemes;
+  final List<OrderSchemeInfo> unlockableSchemes;
+
+  const DraftOrderItem({
+    required this.id,
+    this.productId = 0,
+    this.productName = '',
+    this.productPrice = 0,
+    this.productQuantity = 0,
+    this.productTotalprice = 0,
+    this.availableStock = 0,
+    this.maxAllowed = 0,
+    this.stockClass = '',
+    this.stockLabel = '',
+    this.isFree = false,
+    this.appliedSchemes = const [],
+    this.unlockableSchemes = const [],
+  });
+
+  factory DraftOrderItem.fromJson(Map<String, dynamic> j) {
+    final schemes = _asMap(j['schemes']);
+    return DraftOrderItem(
+      id: _toInt(j['id']),
+      productId: _toInt(j['product_id']),
+      productName: _toStr(j['product_name']) ?? '',
+      productPrice: _toDouble(j['product_price']),
+      productQuantity: _toInt(j['product_quantity']),
+      productTotalprice: _toDouble(j['product_totalprice']),
+      availableStock: _toInt(j['available_stock']),
+      maxAllowed: _toInt(j['max_allowed']),
+      stockClass: _toStr(j['stock_class']) ?? '',
+      stockLabel: _toStr(j['stock_label']) ?? '',
+      isFree: j['is_free'] == true,
+      appliedSchemes: _toList(schemes['applied'], OrderSchemeInfo.fromJson),
+      unlockableSchemes: _toList(schemes['unlockable'], OrderSchemeInfo.fromJson),
+    );
+  }
+}
+
+class DraftOrderSummary {
+  final double totalPrice;
+  final double totalSavings;
+  final double netPayable;
+  final int creditDays;
+
+  const DraftOrderSummary({
+    this.totalPrice = 0,
+    this.totalSavings = 0,
+    this.netPayable = 0,
+    this.creditDays = 0,
+  });
+
+  factory DraftOrderSummary.fromJson(Map<String, dynamic> j) => DraftOrderSummary(
+        totalPrice: _toDouble(j['total_price']),
+        totalSavings: _toDouble(j['total_savings']),
+        netPayable: _toDouble(j['net_payable']),
+        creditDays: _toInt(j['credit_days']),
+      );
+}
+
+class DraftOrder {
+  final int orderId;
+  final String orderNumber;
+  final String salesmanName;
+  final double total;
+  final String invoiceStatus;
+  final String? createdAt;
+  final String? formattedDate;
+  final bool canApprove;
+  final bool hasOutOfStock;
+  final bool hasLowStock;
+  final int totalItems;
+  final List<DraftOrderItem> items;
+  final DraftOrderSummary summary;
+
+  const DraftOrder({
+    required this.orderId,
+    this.orderNumber = '',
+    this.salesmanName = '',
+    this.total = 0,
+    this.invoiceStatus = 'Draft',
+    this.createdAt,
+    this.formattedDate,
+    this.canApprove = false,
+    this.hasOutOfStock = false,
+    this.hasLowStock = false,
+    this.totalItems = 0,
+    this.items = const [],
+    this.summary = const DraftOrderSummary(),
+  });
+
+  factory DraftOrder.fromJson(Map<String, dynamic> j) => DraftOrder(
+        orderId: _toInt(j['order_id']),
+        orderNumber: _toStr(j['order_number']) ?? '',
+        salesmanName: _toStr(j['salesman_name']) ?? '',
+        total: _toDouble(j['total']),
+        invoiceStatus: _toStr(j['invoice_status']) ?? 'Draft',
+        createdAt: _toStr(j['created_at']),
+        formattedDate: _toStr(j['formatted_date']),
+        canApprove: j['can_approve'] == true,
+        hasOutOfStock: j['has_out_of_stock'] == true,
+        hasLowStock: j['has_low_stock'] == true,
+        totalItems: _toInt(j['total_items']),
+        items: _toList(j['items'], DraftOrderItem.fromJson),
+        summary: DraftOrderSummary.fromJson(_asMap(j['summary'])),
+      );
+}
+
+class HistoryOrder {
+  final int orderId;
+  final String orderNumber;
+  final double total;
+  final String paymentStatus;
+  final String? createdAt;
+  final String? formattedDate;
+
+  const HistoryOrder({
+    required this.orderId,
+    this.orderNumber = '',
+    this.total = 0,
+    this.paymentStatus = 'Pending',
+    this.createdAt,
+    this.formattedDate,
+  });
+
+  factory HistoryOrder.fromJson(Map<String, dynamic> j) => HistoryOrder(
+        orderId: _toInt(j['order_id']),
+        orderNumber: _toStr(j['order_number']) ?? '',
+        total: _toDouble(j['total']),
+        paymentStatus: _toStr(j['payment_status']) ?? 'Pending',
+        createdAt: _toStr(j['created_at']),
+        formattedDate: _toStr(j['formatted_date']),
+      );
+}
+
+class ReviewOrdersData {
+  final int draftCount;
+  final List<DraftOrder> draftOrders;
+  final List<HistoryOrder> historyOrders;
+  final PageInfo pagination;
+
+  const ReviewOrdersData({
+    this.draftCount = 0,
+    this.draftOrders = const [],
+    this.historyOrders = const [],
+    this.pagination = const PageInfo(),
+  });
+
+  factory ReviewOrdersData.fromJson(Map<String, dynamic> j) => ReviewOrdersData(
+        draftCount: _toInt(j['draft_count']),
+        draftOrders: _toList(j['draft_orders'], DraftOrder.fromJson),
+        historyOrders: _toList(j['history_orders'], HistoryOrder.fromJson),
+        pagination: PageInfo.fromJson(_asMap(j['pagination'])),
       );
 }

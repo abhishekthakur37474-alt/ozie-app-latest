@@ -2,13 +2,6 @@
 /**
  * Ozie API — Retailer Approved Orders (View Orders)
  * Endpoint: GET /v1/retailer/orders
- * 
- * Supports:
- *  - Role-based scoping (Retailer sees all outlet orders, Salesman sees only self-created)
- *  - Filter by Search (Invoice Number or Customer/Shipping Name)
- *  - Filter by Date Range (start_date to end_date)
- *  - Dynamic Summary (Total Approved Count & Total Order Value)
- *  - Pagination (page, limit, total_pages)
  */
 
 if (!defined('OZIE_API')) {
@@ -16,22 +9,24 @@ if (!defined('OZIE_API')) {
     exit('Direct access not permitted.');
 }
 
-// ── 0. Immediate Error Trap (Prevents blind 500 error) ─────
-set_exception_handler(function (\Throwable $e) {
-    http_response_code(200);
-    header('Content-Type: application/json; charset=utf-8');
-    echo json_encode([
-        'success' => false,
-        'message' => 'PHP Exception: ' . $e->getMessage() . ' in ' . basename($e->getFile()) . ':' . $e->getLine(),
-        'data'    => null,
-        'errors'  => [
-            'file'  => $e->getFile(),
-            'line'  => $e->getLine(),
-            'trace' => explode("\n", $e->getTraceAsString())
-        ]
-    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-    exit;
-});
+// ── 0. Response Compatibility Helper ───────────────────────
+if (!function_exists('success')) {
+    function success($data = [], $message = 'Success', $code = 200) {
+        if (function_exists('ok')) {
+            ok($data, $message, $code);
+        } else {
+            http_response_code($code);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode([
+                'success' => true,
+                'message' => $message,
+                'data'    => $data,
+                'errors'  => null
+            ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            exit;
+        }
+    }
+}
 
 // ── 1. Database Connection Resolver ───────────────────────
 $db = null;
@@ -85,7 +80,7 @@ if (!function_exists('safe_query')) {
                 return ($res instanceof mysqli_result) ? ($res->fetch_all(MYSQLI_ASSOC) ?: []) : [];
             }
         } catch (\Throwable $e) {
-            error_log("[SafeQuery Error] " . $e->getMessage() . " | SQL: " . $sql);
+            error_log("[Orders Query Error] " . $e->getMessage() . " | SQL: " . $sql);
         }
         return [];
     }
@@ -98,7 +93,7 @@ if (!function_exists('safe_one')) {
     }
 }
 
-// ── 3. Safe Date Formatter (PHP 8 TypeError Immune) ────────
+// ── 3. Safe Date Formatter ─────────────────────────────────
 $safeDate = function ($dateStr, $format = 'd M Y, h:i A'): ?string {
     if (!$dateStr || $dateStr === '0000-00-00' || $dateStr === '0000-00-00 00:00:00') {
         return null;
@@ -120,7 +115,6 @@ if ($user_id <= 0) {
 
 $user_type = strtolower(trim($user['user_type'] ?? $user['role'] ?? $user['type'] ?? 'retailer'));
 
-// If user_type is not salesman and not verified, ensure retailer mapping
 if ($user_type !== 'salesman' && $user_type !== 'retailer') {
     $checkRet = safe_one($db, "SELECT id, user_id FROM retailer WHERE user_id = ? OR id = ? LIMIT 1", [$user_id, $user_id]);
     if (!empty($checkRet)) {
@@ -135,7 +129,6 @@ if ($user_type !== 'salesman' && $user_type !== 'retailer') {
 $where_clauses = [];
 $params = [];
 
-// Apply User Type Scoping (from web logic)
 if ($user_type === 'salesman') {
     $where_clauses[] = "salesman_id = ?";
     $params[] = $user_id;
@@ -144,10 +137,9 @@ if ($user_type === 'salesman') {
     $params[] = $user_id;
 }
 
-// Show only Approved orders
 $where_clauses[] = "invoice_status = 'Approved'";
 
-// 1. Search Filter (Invoice number or Shipping name)
+// Search Filter
 $search = trim($_GET['search'] ?? ($_GET['term'] ?? ($_GET['q'] ?? '')));
 if ($search !== '') {
     $where_clauses[] = "(invoice_number LIKE ? OR shipping_name LIKE ?)";
@@ -155,7 +147,7 @@ if ($search !== '') {
     $params[] = "%$search%";
 }
 
-// 2. Date Range Filters
+// Date Range Filters
 $start_date = trim($_GET['start_date'] ?? '');
 $end_date   = trim($_GET['end_date'] ?? '');
 
@@ -195,7 +187,6 @@ foreach ($ordersList as $row) {
     $invoice_num    = !empty($row['invoice_number']) ? $row['invoice_number'] : ('ORD-' . $oid);
     $shipping_name  = !empty($row['shipping_name']) ? trim($row['shipping_name']) : 'N/A';
 
-    // Status Badge Logic matching web colors
     if ($payment_status === 'Paid') {
         $payment_badge = 'Paid';
         $payment_color = 'success';
@@ -222,8 +213,8 @@ foreach ($ordersList as $row) {
     ];
 }
 
-// ── 9. Unified JSON Response ──────────────────────────────
-success([
+// ── 9. Return Unified JSON Response (Using native ok()) ───
+ok([
     'summary' => [
         'total_orders' => $total_items,
         'total_amount' => $total_amount
