@@ -119,7 +119,6 @@ class _DashboardBody extends StatelessWidget {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
       children: [
-        // Active schemes sit at the very top as a scrolling strip.
         if (schemes.isNotEmpty) ...[
           const _SectionTitle('Active Schemes'),
           const SizedBox(height: 12),
@@ -835,7 +834,7 @@ class _OrderRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  '${order.customer} · ${formatDate(order.createdAt)}',
+                  '${order.customer} · ${_prettyDate(order.createdAt)}',
                   style: const TextStyle(fontSize: 12, color: AppColors.muted),
                 ),
               ],
@@ -919,7 +918,7 @@ class _PaymentRow extends StatelessWidget {
                 const SizedBox(height: 3),
                 Text(
                   (payment.dueDate ?? '').isNotEmpty
-                      ? 'Due ${formatDate(payment.dueDate)}'
+                      ? 'Due ${_prettyDate(payment.dueDate)}'
                       : (payment.paymentStatus ?? ''),
                   style: const TextStyle(fontSize: 12, color: AppColors.muted),
                 ),
@@ -945,6 +944,13 @@ class _PaymentRow extends StatelessWidget {
       ),
     );
   }
+}
+
+String _prettyDate(String? raw) {
+  final s = (raw ?? '').trim();
+  if (s.isEmpty) return '-';
+  if (RegExp(r'[A-Za-z]').hasMatch(s)) return s;
+  return formatDate(s);
 }
 
 /* ----------------------------- shared ----------------------------- */

@@ -218,4 +218,46 @@ class RetailerService {
     );
     return _parseNotifications(res);
   }
+
+  static Future<RetailerSchemesPage> getSchemes() async {
+    final res = await _api.get('v1/retailer/schemes');
+    return RetailerSchemesPage.fromJson(_dataOf(res));
+  }
+
+  static Future<RetailerCart> getCart() async {
+    final res = await _api.get('v1/retailer/cart');
+    return RetailerCart.fromJson(_dataOf(res));
+  }
+
+  static Future<RetailerCart> updateCartItem({
+    required int cartId,
+    required int productId,
+    required int quantity,
+  }) async {
+    await _api.post(
+      'v1/retailer/cart',
+      body: {
+        'action': 'update',
+        'cart_id': cartId,
+        'product_id': productId,
+        'quantity': quantity,
+      },
+    );
+    return getCart();
+  }
+
+  static Future<RetailerCart> removeCartItem({
+    required int cartId,
+    required int productId,
+  }) async {
+    await _api.post(
+      'v1/retailer/cart',
+      body: {
+        'action': 'remove',
+        'cart_id': cartId,
+        'product_id': productId,
+      },
+    );
+    return getCart();
+  }
 }

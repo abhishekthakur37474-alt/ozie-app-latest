@@ -6,17 +6,24 @@ import '../../core/retailer_service.dart';
 import '../../widgets/app_widgets.dart';
 
 class CatalogTab extends StatefulWidget {
-  const CatalogTab({super.key});
+  final int? highlightProductId;
+  final String? highlightProductName;
+  const CatalogTab({
+    super.key,
+    this.highlightProductId,
+    this.highlightProductName,
+  });
 
   @override
-  State<CatalogTab> createState() => _CatalogTabState();
+  State<CatalogTab> createState() => CatalogTabState();
 }
 
-class _CatalogTabState extends State<CatalogTab>
+class CatalogTabState extends State<CatalogTab>
     with AutomaticKeepAliveClientMixin {
 
   final _searchCtrl = TextEditingController();
   final _scroll = ScrollController();
+  final Map<int, GlobalKey> _productKeys = {};
 
   ProductsCatalog? _data;
   String? _error;
@@ -33,11 +40,32 @@ class _CatalogTabState extends State<CatalogTab>
   @override
   bool get wantKeepAlive => true;
 
+  int get cartCount => _data?.cartCount ?? 0;
+
+  void applySearch(String query) {
+    _searchCtrl.text = query;
+    _load(reset: true);
+  }
+
+  void clearSearch() {
+    if (_searchCtrl.text.isEmpty) return;
+    _searchCtrl.clear();
+    _load(reset: true);
+  }
+
   @override
   void initState() {
     super.initState();
     _scroll.addListener(_onScroll);
-    _data = RetailerService.cachedProducts(limit: _pageSize);
+    final highlightName = (widget.highlightProductName ?? '').trim();
+    if (highlightName.isNotEmpty &&
+        highlightName.toLowerCase() != 'all products') {
+      _searchCtrl.text = highlightName;
+    }
+    _data = RetailerService.cachedProducts(
+      search: _searchCtrl.text.trim(),
+      limit: _pageSize,
+    );
     _loading = _data == null;
     _load(reset: true);
   }
@@ -105,6 +133,7 @@ class _CatalogTabState extends State<CatalogTab>
         _loadingMore = false;
         _error = null;
       });
+      _scrollToHighlight();
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -113,6 +142,43 @@ class _CatalogTabState extends State<CatalogTab>
         _loadingMore = false;
       });
     }
+  }
+
+  GlobalKey _keyFor(int id) =>
+      _productKeys.putIfAbsent(id, GlobalKey.new);
+
+  void _scrollToHighlight() {
+    final id = widget.highlightProductId;
+    final name = (widget.highlightProductName ?? '').trim().toLowerCase();
+    final hasId = id != null && id > 0;
+    final hasName = name.isNotEmpty && name != 'all products';
+    if (!hasId && !hasName) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      final products = _data?.products ?? const <ProductItem>[];
+      var index = hasId ? products.indexWhere((p) => p.id == id) : -1;
+      if (index < 0 && hasName) {
+        index = products.indexWhere(
+          (p) => p.name.toLowerCase().contains(name),
+        );
+      }
+      if (index < 0) {
+        final p = _data?.pagination;
+        if (p != null && p.hasNextPage && !_loadingMore) {
+          await _load(page: _page + 1);
+        }
+        return;
+      }
+      final ctx = _productKeys[products[index].id]?.currentContext;
+      if (ctx != null) {
+        await Scrollable.ensureVisible(
+          ctx,
+          duration: const Duration(milliseconds: 450),
+          curve: Curves.easeInOut,
+          alignment: 0.15,
+        );
+      }
+    });
   }
 
   Future<void> _toggleWish(ProductItem p) async {
@@ -234,8 +300,10 @@ class _CatalogTabState extends State<CatalogTab>
                 ),
                 delegate: SliverChildBuilderDelegate(
                   (context, i) => _ProductCard(
+                    key: _keyFor(d.products[i].id),
                     product: d.products[i],
                     busy: _busy.contains(d.products[i].id),
+                    highlighted: widget.highlightProductId == d.products[i].id,
                     onWish: () => _toggleWish(d.products[i]),
                     onAdd: () => _addCart(d.products[i]),
                   ),
@@ -258,36 +326,10 @@ class _CatalogTabState extends State<CatalogTab>
   Widget _filters(ProductsCatalog d) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-      child: Column(
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _searchCtrl,
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: (_) => _load(reset: true),
-                  decoration: inputDecoration(
-                    hint: 'Search products',
-                    suffix: IconButton(
-                      icon: const Icon(Icons.search, color: AppColors.muted),
-                      onPressed: () => _load(reset: true),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              _countChip(Icons.favorite_border, d.wishlistCount, _wishlistOnly, () {
-                setState(() => _wishlistOnly = !_wishlistOnly);
-                _load(reset: true);
-              }),
-              const SizedBox(width: 6),
-              _countChip(Icons.shopping_cart_outlined, d.cartCount, false, null),
-            ],
-          ),
           if (d.categories.isNotEmpty) ...[
-            const SizedBox(height: 12),
             SizedBox(
               height: 36,
               child: ListView(
@@ -333,28 +375,6 @@ class _CatalogTabState extends State<CatalogTab>
     );
   }
 
-  Widget _countChip(IconData icon, int count, bool active, VoidCallback? onTap) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        decoration: BoxDecoration(
-          color: active ? const Color(0xFFDCE9FA) : AppColors.card,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: active ? AppColors.blue : AppColors.border),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: active ? AppColors.blue : AppColors.text),
-            const SizedBox(width: 4),
-            Text('$count', style: TextStyle(fontWeight: FontWeight.w600, color: active ? AppColors.blue : AppColors.text)),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _chip(String label, bool selected, VoidCallback onTap) {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
@@ -379,11 +399,14 @@ class _CatalogTabState extends State<CatalogTab>
 class _ProductCard extends StatelessWidget {
   final ProductItem product;
   final bool busy;
+  final bool highlighted;
   final VoidCallback onWish;
   final VoidCallback onAdd;
   const _ProductCard({
+    super.key,
     required this.product,
     required this.busy,
+    this.highlighted = false,
     required this.onWish,
     required this.onAdd,
   });
@@ -395,7 +418,10 @@ class _ProductCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.card,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(
+          color: highlighted ? AppColors.blue : AppColors.border,
+          width: highlighted ? 2 : 1,
+        ),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(

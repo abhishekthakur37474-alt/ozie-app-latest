@@ -5,8 +5,9 @@ import '../core/models.dart';
 import '../core/push_service.dart';
 import '../widgets/app_widgets.dart';
 import 'bank_card_screen.dart';
+import 'catalog_screen.dart';
 import 'notifications_screen.dart';
-import 'tabs/catalog_tab.dart';
+import 'schemes_screen.dart';
 import 'tabs/home_tab.dart';
 import 'tabs/orders_tab.dart';
 import 'tabs/settings_tab.dart';
@@ -22,7 +23,7 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _index = 0;
-  bool _catalogReady = false;
+  bool _schemesReady = false;
   bool _ordersReady = false;
 
   @override
@@ -33,7 +34,7 @@ class _MainShellState extends State<MainShell> {
     );
   }
 
-  static const List<String> _titles = ['Home', 'Catalog', 'View Orders', 'Settings'];
+  static const List<String> _titles = ['Home', 'Schemes', 'View Orders', 'Settings'];
 
   /// Home shows logo + app name. Other tabs show the tab name.
   Widget _buildTitle() {
@@ -76,31 +77,41 @@ class _MainShellState extends State<MainShell> {
     );
   }
 
+  void _openCatalog({int? productId, String? productName}) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CatalogScreen(
+          highlightProductId: productId,
+          highlightProductName: productName,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    if (_index == 1) _catalogReady = true;
+    if (_index == 1) _schemesReady = true;
     if (_index == 2) _ordersReady = true;
 
     final pages = <Widget>[
       HomeTab(
         session: widget.session,
-        onViewCatalog: () => setState(() {
-          _catalogReady = true;
-          _index = 1;
-        }),
+        onViewCatalog: () => _openCatalog(),
         onViewOrders: () => setState(() {
           _ordersReady = true;
           _index = 2;
         }),
       ),
-      _catalogReady ? const CatalogTab() : const SizedBox.shrink(),
+      _schemesReady
+          ? SchemesScreen(
+              embedded: true,
+              onApply: _openCatalog,
+            )
+          : const SizedBox.shrink(),
       _ordersReady ? const OrdersTab() : const SizedBox.shrink(),
       SettingsTab(
         session: widget.session,
-        onViewCatalog: () => setState(() {
-          _catalogReady = true;
-          _index = 1;
-        }),
+        onViewCatalog: () => _openCatalog(),
         onViewOrders: () => setState(() {
           _ordersReady = true;
           _index = 2;
@@ -175,7 +186,7 @@ class _MainShellState extends State<MainShell> {
             child: NavigationBar(
               selectedIndex: _index,
               onDestinationSelected: (i) => setState(() {
-                if (i == 1) _catalogReady = true;
+                if (i == 1) _schemesReady = true;
                 if (i == 2) _ordersReady = true;
                 _index = i;
               }),
@@ -196,12 +207,12 @@ class _MainShellState extends State<MainShell> {
                   label: 'Home',
                 ),
                 NavigationDestination(
-                  icon: HugeIcon(icon: HugeIcons.strokeRoundedStore03),
-                  selectedIcon: HugeIcon(
-                    icon: HugeIcons.strokeRoundedStore03,
+                  icon: Icon(Icons.local_offer_outlined),
+                  selectedIcon: Icon(
+                    Icons.local_offer,
                     color: AppColors.blue,
                   ),
-                  label: 'Catalog',
+                  label: 'Schemes',
                 ),
                 NavigationDestination(
                   icon: HugeIcon(icon: HugeIcons.strokeRoundedShoppingBag01),

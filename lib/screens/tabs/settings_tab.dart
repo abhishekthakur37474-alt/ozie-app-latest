@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import '../../core/models.dart';
 import '../../core/router.dart';
 import '../../widgets/app_widgets.dart';
+import '../catalog_screen.dart';
 import '../notifications_screen.dart';
 import '../profile_screen.dart';
+import '../schemes_screen.dart';
 
 class _MenuItem {
   final IconData icon;
@@ -128,14 +130,27 @@ class SettingsTab extends StatelessWidget {
           MaterialPageRoute<void>(builder: (_) => const ProfileScreen()),
         );
       }),
-      _MenuItem(Icons.grid_view_rounded, 'My Catalog', onViewCatalog ?? soon('My Catalog')),
+      _MenuItem(
+        Icons.grid_view_rounded,
+        'My Catalog',
+        onViewCatalog ??
+            () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const CatalogScreen()),
+              );
+            },
+      ),
       _MenuItem(Icons.receipt_long_outlined, 'View Orders', onViewOrders ?? soon('View Orders')),
       _MenuItem(Icons.account_balance_wallet_outlined, 'Ozie Finance', soon('Ozie Finance')),
       _MenuItem(Icons.inventory_2_outlined, 'Packing', soon('Packing')),
       _MenuItem(Icons.local_shipping_outlined, 'Dispatch', soon('Dispatch')),
       _MenuItem(Icons.move_to_inbox_outlined, 'Received Order', soon('Received Order')),
       _MenuItem(Icons.assignment_return_outlined, 'My Returns', soon('My Returns')),
-      _MenuItem(Icons.local_offer_outlined, 'Schemes', soon('Schemes')),
+      _MenuItem(Icons.local_offer_outlined, 'Schemes', () {
+        Navigator.of(context).push(
+          MaterialPageRoute<void>(builder: (_) => const SchemesScreen()),
+        );
+      }),
       _MenuItem(Icons.bar_chart_rounded, 'Report', soon('Report')),
       _MenuItem(Icons.notifications_none_rounded, 'Notifications', () {
         Navigator.of(context).push(

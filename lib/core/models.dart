@@ -219,9 +219,31 @@ class DuplicateResult {
       );
 }
 
-double _toDouble(dynamic v) => (v as num?)?.toDouble() ?? 0;
-int _toInt(dynamic v) => (v as num?)?.toInt() ?? 0;
-String? _toStr(dynamic v) => v?.toString();
+double _toDouble(dynamic v) {
+  if (v is num) return v.toDouble();
+  if (v is String) return double.tryParse(v.trim()) ?? 0;
+  return 0;
+}
+
+int _toInt(dynamic v) {
+  if (v is num) return v.toInt();
+  if (v is String) return int.tryParse(v.trim()) ?? 0;
+  return 0;
+}
+
+String? _toStr(dynamic v) {
+  if (v == null) return null;
+  final s = v.toString();
+  return s.isEmpty || s == 'null' ? null : s;
+}
+
+dynamic _first(Map<String, dynamic> j, List<String> keys) {
+  for (final k in keys) {
+    if (!j.containsKey(k) || j[k] == null) continue;
+    return j[k];
+  }
+  return null;
+}
 
 List<T> _toList<T>(dynamic v, T Function(Map<String, dynamic>) build) {
   if (v is! List) return const [];
@@ -266,22 +288,43 @@ class RetailerDashboard {
     required this.quickActions,
   });
 
-  factory RetailerDashboard.fromJson(Map<String, dynamic> j) => RetailerDashboard(
-        greeting: DashboardGreeting.fromJson(_asMap(j['greeting'])),
-        credit: DashboardCredit.fromJson(_asMap(j['credit'])),
-        today: DashboardToday.fromJson(_asMap(j['today'])),
-        counts: DashboardCounts.fromJson(_asMap(j['counts'])),
-        pendingPaymentsTotal: _toDouble(j['pending_payments_total']),
-        bankCard: DashboardBankCard.fromJson(_asMap(j['bank_card'])),
-        banners: _toList(j['banners'], DashboardBanner.fromJson),
-        paperSchemes: _toList(j['paper_schemes'], DashboardScheme.fromJson),
-        standardSchemes: _toList(j['standard_schemes'], DashboardScheme.fromJson),
-        marquee: _toList(j['marquee'], DashboardScheme.fromJson),
-        latestOrders: _toList(j['latest_orders'], DashboardOrder.fromJson),
-        pendingPayments:
-            _toList(j['pending_payments'], DashboardPendingPayment.fromJson),
-        quickActions: _toList(j['quick_actions'], DashboardQuickAction.fromJson),
-      );
+  factory RetailerDashboard.fromJson(Map<String, dynamic> j) {
+    final greetingMap = _asMap(j['greeting']);
+    final retailerMap = _asMap(j['retailer']);
+    final creditMap = _asMap(_first(j, ['credit_overview', 'credit']));
+    final todayMap = _asMap(_first(j, ['today_overview', 'today']));
+    final countsMap = _asMap(_first(j, ['order_metrics', 'counts']));
+    return RetailerDashboard(
+      greeting: DashboardGreeting.fromJson({
+        ...greetingMap,
+        if (retailerMap.isNotEmpty) ...retailerMap,
+      }),
+      credit: DashboardCredit.fromJson(creditMap),
+      today: DashboardToday.fromJson(todayMap),
+      counts: DashboardCounts.fromJson(countsMap),
+      pendingPaymentsTotal: _toDouble(
+        _first(j, ['pending_payments_total']) ?? todayMap['due_pay_amount'],
+      ),
+      bankCard: DashboardBankCard.fromJson(_asMap(j['bank_card'])),
+      banners: _toList(j['banners'], DashboardBanner.fromJson),
+      paperSchemes: _toList(j['paper_schemes'], DashboardScheme.fromJson),
+      standardSchemes: _toList(
+        _first(j, ['standard_schemes', 'marquee_schemes']),
+        DashboardScheme.fromJson,
+      ),
+      marquee: _toList(
+        _first(j, ['marquee', 'marquee_schemes']),
+        DashboardScheme.fromJson,
+      ),
+      latestOrders: _toList(
+        _first(j, ['latest_approved_orders', 'latest_orders']),
+        DashboardOrder.fromJson,
+      ),
+      pendingPayments:
+          _toList(j['pending_payments'], DashboardPendingPayment.fromJson),
+      quickActions: _toList(j['quick_actions'], DashboardQuickAction.fromJson),
+    );
+  }
 
   /// All active schemes with the paper ones first (same order as the ticker).
   List<DashboardScheme> get allSchemes => marquee;
@@ -293,6 +336,10 @@ class DashboardGreeting {
   final String? retailerCode;
   final String category;
   final String? date;
+  final String? title;
+  final String? subtitle;
+  final String? photoUrl;
+  final String? mobile;
 
   const DashboardGreeting({
     required this.name,
@@ -300,16 +347,24 @@ class DashboardGreeting {
     this.retailerCode,
     this.category = 'D',
     this.date,
+    this.title,
+    this.subtitle,
+    this.photoUrl,
+    this.mobile,
   });
 
   factory DashboardGreeting.fromJson(Map<String, dynamic> j) {
-    final name = _toStr(j['name']) ?? 'Retailer';
+    final name = _toStr(_first(j, ['full_name', 'name'])) ?? 'Retailer';
     return DashboardGreeting(
       name: name,
       firstName: _toStr(j['first_name']) ?? name.split(' ').first,
       retailerCode: _toStr(j['retailer_code']),
       category: _toStr(j['category']) ?? 'D',
       date: _toStr(j['date']),
+      title: _toStr(j['title']),
+      subtitle: _toStr(j['subtitle']),
+      photoUrl: _toStr(j['photo_url']),
+      mobile: _toStr(j['mobile']),
     );
   }
 }
@@ -328,10 +383,10 @@ class DashboardCredit {
   });
 
   factory DashboardCredit.fromJson(Map<String, dynamic> j) => DashboardCredit(
-        limit: _toDouble(j['limit']),
+        limit: _toDouble(_first(j, ['anchor_credit_limit', 'limit', 'credit_limit'])),
         currentBalance: _toDouble(j['current_balance']),
         availableCredit: _toDouble(j['available_credit']),
-        creditDays: _toInt(j['credit_days']),
+        creditDays: _toInt(_first(j, ['credit_duration_days', 'credit_days'])),
       );
 
   double get usedRatio =>
@@ -342,17 +397,23 @@ class DashboardToday {
   final int ordersCount;
   final double salesValue;
   final double paidValue;
+  final String? date;
+  final double duePayAmount;
 
   const DashboardToday({
     this.ordersCount = 0,
     this.salesValue = 0,
     this.paidValue = 0,
+    this.date,
+    this.duePayAmount = 0,
   });
 
   factory DashboardToday.fromJson(Map<String, dynamic> j) => DashboardToday(
-        ordersCount: _toInt(j['orders_count']),
-        salesValue: _toDouble(j['sales_value']),
-        paidValue: _toDouble(j['paid_value']),
+        ordersCount: _toInt(_first(j, ['today_orders_count', 'orders_count'])),
+        salesValue: _toDouble(_first(j, ['today_sales_amount', 'sales_value'])),
+        paidValue: _toDouble(_first(j, ['today_paid_amount', 'paid_value'])),
+        date: _toStr(j['date']),
+        duePayAmount: _toDouble(j['due_pay_amount']),
       );
 }
 
@@ -369,7 +430,7 @@ class DashboardCounts {
 
   factory DashboardCounts.fromJson(Map<String, dynamic> j) => DashboardCounts(
         pendingOrders: _toInt(j['pending_orders']),
-        dispatched: _toInt(j['dispatched']),
+        dispatched: _toInt(_first(j, ['dispatches', 'dispatched'])),
         pendingPayments: _toInt(j['pending_payments']),
       );
 }
@@ -378,20 +439,24 @@ class DashboardBankCard {
   final String status;
   final String message;
   final String? action;
+  final bool? activeFlag;
 
   const DashboardBankCard({
     this.status = 'Inactive',
     this.message = '',
     this.action,
+    this.activeFlag,
   });
 
   factory DashboardBankCard.fromJson(Map<String, dynamic> j) => DashboardBankCard(
         status: _toStr(j['status']) ?? 'Inactive',
         message: _toStr(j['message']) ?? '',
-        action: _toStr(j['action']),
+        action: _toStr(_first(j, ['action_label', 'action'])),
+        activeFlag: j['is_active'] is bool ? j['is_active'] as bool : null,
       );
 
-  bool get isActive => status.toLowerCase() == 'active';
+  bool get isActive =>
+      activeFlag == true || status.toLowerCase() == 'active';
   bool get isPending => status.toLowerCase() == 'pending';
 }
 
@@ -460,9 +525,9 @@ class DashboardScheme {
 
   factory DashboardScheme.fromJson(Map<String, dynamic> j) => DashboardScheme(
         id: _toInt(j['id']),
-        originType: _toStr(j['origin_type']) ?? 'Standard Scheme',
-        title: _toStr(j['title']),
-        schemeType: _toStr(j['scheme_type']),
+        originType: _toStr(_first(j, ['origin_type', 'type'])) ?? 'Standard Scheme',
+        title: _toStr(_first(j, ['scheme_title', 'title'])),
+        schemeType: _toStr(_first(j, ['scheme_type', 'type'])),
         productId: (j['product_id'] as num?)?.toInt(),
         productName: _toStr(j['product_name']) ?? 'All Products',
         minQuantity: _toInt(j['min_quantity']),
@@ -501,16 +566,25 @@ class DashboardOrder {
     this.createdAt,
   });
 
-  factory DashboardOrder.fromJson(Map<String, dynamic> j) => DashboardOrder(
-        orderId: _toInt(j['order_id']),
-        invoiceNumber: _toStr(j['invoice_number']),
-        displayNumber: _toStr(j['display_number']) ?? '',
-        customer: _toStr(j['customer']) ?? 'Customer',
-        total: _toDouble(j['total']),
-        paymentStatus: _toStr(j['payment_status']),
-        isPaid: j['is_paid'] == true,
-        createdAt: _toStr(j['created_at']),
-      );
+  factory DashboardOrder.fromJson(Map<String, dynamic> j) {
+    final paymentStatus = _toStr(j['payment_status']);
+    return DashboardOrder(
+      orderId: _toInt(_first(j, ['id', 'order_id'])),
+      invoiceNumber: _toStr(j['invoice_number']),
+      displayNumber: _toStr(_first(j, [
+            'order_number',
+            'invoice_number',
+            'display_number',
+          ])) ??
+          '',
+      customer: _toStr(_first(j, ['customer_name', 'customer'])) ?? 'Customer',
+      total: _toDouble(_first(j, ['amount', 'total'])),
+      paymentStatus: paymentStatus,
+      isPaid: j['is_paid'] == true ||
+          (paymentStatus ?? '').toLowerCase() == 'paid',
+      createdAt: _toStr(_first(j, ['formatted_date', 'created_at'])),
+    );
+  }
 }
 
 class DashboardPendingPayment {
@@ -538,15 +612,15 @@ class DashboardPendingPayment {
 
   factory DashboardPendingPayment.fromJson(Map<String, dynamic> j) =>
       DashboardPendingPayment(
-        orderId: _toInt(j['order_id']),
+        orderId: _toInt(_first(j, ['id', 'order_id'])),
         invoiceNumber: _toStr(j['invoice_number']),
         total: _toDouble(j['total']),
         paidAmount: (j['paid_amount'] as num?)?.toDouble(),
         dueAmount: (j['due_amount'] as num?)?.toDouble(),
-        dueDate: _toStr(j['due_date']),
+        dueDate: _toStr(_first(j, ['due_display', 'due_date'])),
         paymentStatus: _toStr(j['payment_status']),
         isOverdue: j['is_overdue'] == true,
-        badge: _toStr(j['badge']) ?? 'Pending',
+        badge: _toStr(_first(j, ['status_label', 'badge'])) ?? 'Pending',
       );
 }
 
@@ -1183,6 +1257,197 @@ class NotificationsPage {
           ? unread
           : items.where((n) => !n.isRead).length,
       pagination: PageInfo.fromJson(_asMap(j['pagination'])),
+    );
+  }
+}
+
+/// Response of GET v1/retailer/schemes.
+class RetailerSchemeOffer {
+  final int id;
+  final String schemeTitle;
+  final String schemeType;
+  final bool isPaperScheme;
+  final String originType;
+  final String benefit;
+  final int? productId;
+  final String productName;
+  final String brand;
+  final String minRequirement;
+  final int minQty;
+  final String? startDate;
+  final String? endDate;
+  final int daysLeft;
+  final bool isExpiringSoon;
+
+  const RetailerSchemeOffer({
+    required this.id,
+    this.schemeTitle = '',
+    this.schemeType = '',
+    this.isPaperScheme = false,
+    this.originType = 'Standard Scheme',
+    this.benefit = '',
+    this.productId,
+    this.productName = 'All Products',
+    this.brand = '',
+    this.minRequirement = '',
+    this.minQty = 0,
+    this.startDate,
+    this.endDate,
+    this.daysLeft = 0,
+    this.isExpiringSoon = false,
+  });
+
+  factory RetailerSchemeOffer.fromJson(Map<String, dynamic> j) =>
+      RetailerSchemeOffer(
+        id: _toInt(j['id']),
+        schemeTitle: _toStr(j['scheme_title']) ?? '',
+        schemeType: _toStr(j['scheme_type']) ?? '',
+        isPaperScheme: j['is_paper_scheme'] == true,
+        originType: _toStr(j['origin_type']) ?? 'Standard Scheme',
+        benefit: _toStr(j['benefit']) ?? '',
+        productId: (j['product_id'] as num?)?.toInt(),
+        productName: _toStr(j['product_name']) ?? 'All Products',
+        brand: _toStr(j['brand']) ?? '',
+        minRequirement: _toStr(j['min_requirement']) ?? '',
+        minQty: _toInt(j['min_qty']),
+        startDate: _toStr(j['start_date']),
+        endDate: _toStr(j['end_date']),
+        daysLeft: _toInt(j['days_left']),
+        isExpiringSoon: j['is_expiring_soon'] == true,
+      );
+
+  bool get isAllProducts {
+    final n = productName.trim().toLowerCase();
+    return productId == null || productId == 0 || n.isEmpty || n == 'all products';
+  }
+
+  double get discountPercent {
+    final m = RegExp(r'([\d.]+)\s*%').firstMatch(benefit);
+    return m == null ? 0 : double.tryParse(m.group(1)!) ?? 0;
+  }
+
+  double get flatPerCase {
+    final m = RegExp(r'₹\s*([\d.]+)').firstMatch(benefit);
+    return m == null ? 0 : double.tryParse(m.group(1)!) ?? 0;
+  }
+
+  double savingsFor({required int quantity, required double itemGross}) {
+    if (quantity <= 0) return 0;
+    final pct = discountPercent;
+    if (pct > 0) return itemGross * pct / 100;
+    final flat = flatPerCase;
+    if (flat > 0) return flat * quantity;
+    return 0;
+  }
+}
+
+class RetailerSchemesPage {
+  final int totalOffers;
+  final String filterType;
+  final List<RetailerSchemeOffer> offers;
+
+  const RetailerSchemesPage({
+    this.totalOffers = 0,
+    this.filterType = 'ALL',
+    this.offers = const [],
+  });
+
+  factory RetailerSchemesPage.fromJson(Map<String, dynamic> j) {
+    final offers = _toList(j['offers'], RetailerSchemeOffer.fromJson);
+    return RetailerSchemesPage(
+      totalOffers: _toInt(j['total_offers']) == 0
+          ? offers.length
+          : _toInt(j['total_offers']),
+      filterType: _toStr(j['filter_type']) ?? 'ALL',
+      offers: offers,
+    );
+  }
+}
+
+/// Response of GET v1/retailer/cart.
+class CartItem {
+  final int cartId;
+  final int productId;
+  final String productName;
+  final int quantity;
+  final double unitPrice;
+  final double itemGross;
+  final double itemSavings;
+  final double itemFinal;
+  final bool isReturn;
+  final int stock;
+  final String? photoUrl;
+
+  const CartItem({
+    required this.cartId,
+    required this.productId,
+    this.productName = '',
+    this.quantity = 0,
+    this.unitPrice = 0,
+    this.itemGross = 0,
+    this.itemSavings = 0,
+    this.itemFinal = 0,
+    this.isReturn = false,
+    this.stock = 0,
+    this.photoUrl,
+  });
+
+  factory CartItem.fromJson(Map<String, dynamic> j) => CartItem(
+        cartId: _toInt(j['cart_id']),
+        productId: _toInt(j['product_id']),
+        productName: _toStr(j['product_name']) ?? '',
+        quantity: _toInt(j['quantity']),
+        unitPrice: _toDouble(j['unit_price']),
+        itemGross: _toDouble(j['item_gross']),
+        itemSavings: _toDouble(j['item_savings']),
+        itemFinal: _toDouble(j['item_final']),
+        isReturn: j['is_return'] == true,
+        stock: _toInt(j['stock']),
+        photoUrl: _toStr(j['photo_url']),
+      );
+}
+
+class CartSummary {
+  final double grossTotal;
+  final double totalSavings;
+  final double netPayable;
+  final int creditDays;
+  final String? appliedCoupon;
+
+  const CartSummary({
+    this.grossTotal = 0,
+    this.totalSavings = 0,
+    this.netPayable = 0,
+    this.creditDays = 0,
+    this.appliedCoupon,
+  });
+
+  factory CartSummary.fromJson(Map<String, dynamic> j) => CartSummary(
+        grossTotal: _toDouble(j['gross_total']),
+        totalSavings: _toDouble(j['total_savings']),
+        netPayable: _toDouble(j['net_payable']),
+        creditDays: _toInt(j['credit_days']),
+        appliedCoupon: _toStr(j['applied_coupon']),
+      );
+}
+
+class RetailerCart {
+  final int itemsCount;
+  final List<CartItem> items;
+  final CartSummary summary;
+
+  const RetailerCart({
+    this.itemsCount = 0,
+    this.items = const [],
+    this.summary = const CartSummary(),
+  });
+
+  factory RetailerCart.fromJson(Map<String, dynamic> j) {
+    final items = _toList(j['items'], CartItem.fromJson);
+    return RetailerCart(
+      itemsCount: _toInt(j['items_count']) == 0 ? items.length : _toInt(j['items_count']),
+      items: items,
+      summary: CartSummary.fromJson(_asMap(j['summary'])),
     );
   }
 }

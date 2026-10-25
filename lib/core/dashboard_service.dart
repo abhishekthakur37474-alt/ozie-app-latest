@@ -11,7 +11,9 @@ class DashboardService {
   static Future<RetailerDashboard> getRetailer() async {
     final res = await _api.get('v1/dashboard/retailer');
     final data = res['data'];
-    if (data is Map<String, dynamic>) return RetailerDashboard.fromJson(data);
+    if (data is Map) {
+      return RetailerDashboard.fromJson(Map<String, dynamic>.from(data));
+    }
     throw ApiException('Unexpected server response.');
   }
 }
