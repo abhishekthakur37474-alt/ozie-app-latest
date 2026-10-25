@@ -186,4 +186,36 @@ class RetailerService {
     final res = await _api.post('v1/retailer/review-orders', body: body);
     return (res['message'] as String?) ?? 'Updated.';
   }
+
+  static NotificationsPage _parseNotifications(Map<String, dynamic> res) {
+    final data = res['data'];
+    if (data is List) {
+      final items = data
+          .whereType<Map>()
+          .map((e) => AppNotification.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+      return NotificationsPage(
+        notifications: items,
+        unreadCount: items.where((n) => !n.isRead).length,
+      );
+    }
+    if (data is Map) {
+      return NotificationsPage.fromJson(Map<String, dynamic>.from(data));
+    }
+    if (res['notifications'] is List) {
+      return NotificationsPage.fromJson(res);
+    }
+    throw ApiException('Unexpected server response.');
+  }
+
+  static Future<NotificationsPage> getNotifications({
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final res = await _api.get(
+      'v1/retailer/notifications',
+      query: {'page': page, 'limit': limit},
+    );
+    return _parseNotifications(res);
+  }
 }

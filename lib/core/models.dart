@@ -1107,3 +1107,82 @@ class ReviewOrdersData {
         pagination: PageInfo.fromJson(_asMap(j['pagination'])),
       );
 }
+
+class AppNotification {
+  final int id;
+  final String title;
+  final String message;
+  final String? type;
+  final bool isRead;
+  final String? createdAt;
+  final String? formattedDate;
+
+  const AppNotification({
+    required this.id,
+    this.title = '',
+    this.message = '',
+    this.type,
+    this.isRead = true,
+    this.createdAt,
+    this.formattedDate,
+  });
+
+  factory AppNotification.fromJson(Map<String, dynamic> j) {
+    final readRaw = j['is_read'] ?? j['read'] ?? j['isRead'];
+    final status = _toStr(j['status'])?.toLowerCase();
+    final isRead = readRaw == true ||
+        readRaw == 1 ||
+        readRaw == '1' ||
+        readRaw == 'true' ||
+        status == 'read';
+    return AppNotification(
+      id: _toInt(j['id'] ?? j['notification_id']),
+      title: _toStr(j['title'] ?? j['subject'] ?? j['heading']) ?? '',
+      message: _toStr(
+            j['message'] ??
+                j['body'] ??
+                j['content'] ??
+                j['text'] ??
+                j['description'] ??
+                j['notification'],
+          ) ??
+          '',
+      type: _toStr(j['type'] ?? j['notification_type'] ?? j['category']),
+      isRead: isRead,
+      createdAt: _toStr(
+        j['created_at'] ??
+            j['date_added'] ??
+            j['date'] ??
+            j['time'] ??
+            j['created_on'] ??
+            j['sent_at'],
+      ),
+      formattedDate: _toStr(j['formatted_date'] ?? j['formatted_time']),
+    );
+  }
+}
+
+class NotificationsPage {
+  final List<AppNotification> notifications;
+  final int unreadCount;
+  final PageInfo pagination;
+
+  const NotificationsPage({
+    this.notifications = const [],
+    this.unreadCount = 0,
+    this.pagination = const PageInfo(),
+  });
+
+  factory NotificationsPage.fromJson(Map<String, dynamic> j) {
+    final list = j['notifications'] ?? j['items'] ?? j['list'];
+    final items = _toList(list, AppNotification.fromJson);
+    final unread = _toInt(j['unread_count'] ?? j['unread']);
+    return NotificationsPage(
+      notifications: items,
+      unreadCount: unread > 0
+          ? unread
+          : items.where((n) => !n.isRead).length,
+      pagination: PageInfo.fromJson(_asMap(j['pagination'])),
+    );
+  }
+}

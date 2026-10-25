@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'api_client.dart';
 import 'config.dart';
 import 'models.dart';
+import 'push_service.dart';
 
 class AuthService {
   AuthService._();
@@ -23,6 +26,7 @@ class AuthService {
       throw ApiException('Unexpected server response.');
     }
     await _api.saveToken(token);
+    unawaited(PushService.register(force: true));
     return Session.fromData(data);
   }
 
@@ -113,10 +117,12 @@ class AuthService {
 
   static Future<Session> me() async {
     final res = await _api.get('v1/auth/me');
+    unawaited(PushService.register());
     return Session.fromData(_dataOf(res));
   }
 
   static Future<void> logout() async {
+    await PushService.unregister(); // token abhi valid hai, pehle hatao
     try {
       await _api.post('v1/auth/logout');
     } on ApiException {

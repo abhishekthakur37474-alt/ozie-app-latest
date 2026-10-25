@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hugeicons/hugeicons.dart';
 
 import '../core/models.dart';
+import '../core/push_service.dart';
 import '../widgets/app_widgets.dart';
 import 'bank_card_screen.dart';
 import 'notifications_screen.dart';
@@ -23,6 +24,14 @@ class _MainShellState extends State<MainShell> {
   int _index = 0;
   bool _catalogReady = false;
   bool _ordersReady = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => PushService.openPendingIfAny(),
+    );
+  }
 
   static const List<String> _titles = ['Home', 'Catalog', 'View Orders', 'Settings'];
 
@@ -217,4 +226,4 @@ class _MainShellState extends State<MainShell> {
       ),
     );
   }
-} 
+}
