@@ -224,40 +224,85 @@ class RetailerService {
     return RetailerSchemesPage.fromJson(_dataOf(res));
   }
 
+  static RetailerCart? _cartFrom(Map<String, dynamic> res) {
+    Map<String, dynamic> data;
+    try {
+      data = _dataOf(res);
+    } on ApiException {
+      data = res;
+    }
+    if (data['items'] is List) return RetailerCart.fromJson(data);
+    final nested = data['cart'];
+    if (nested is Map) {
+      final map = Map<String, dynamic>.from(nested);
+      if (map['items'] is List) return RetailerCart.fromJson(map);
+    }
+    return null;
+  }
+
   static Future<RetailerCart> getCart() async {
     final res = await _api.get('v1/retailer/cart');
     return RetailerCart.fromJson(_dataOf(res));
   }
 
-  static Future<RetailerCart> updateCartItem({
+  static Map<String, dynamic> _cartBody({
+    required String action,
+    int cartId = 0,
+    required int productId,
+    int? quantity,
+  }) {
+    final body = <String, dynamic>{
+      'action': action,
+      'product_id': '$productId',
+    };
+    if (cartId > 0) {
+      body['cart_id'] = '$cartId';
+      body['id'] = '$cartId';
+    }
+    if (quantity != null) body['quantity'] = '$quantity';
+    return body;
+  }
+
+  static Future<RetailerCart?> _postCart(Map<String, dynamic> body) async {
+    final res = await _api.post(
+      'v1/retailer/cart',
+      body: body,
+      query: body,
+      form: true,
+    );
+    return _cartFrom(res);
+  }
+
+  static Future<RetailerCart?> updateCartItem({
     required int cartId,
     required int productId,
     required int quantity,
-  }) async {
-    await _api.post(
-      'v1/retailer/cart',
-      body: {
-        'action': 'update',
-        'cart_id': cartId,
-        'product_id': productId,
-        'quantity': quantity,
-      },
-    );
-    return getCart();
+  }) {
+    return _postCart(_cartBody(
+      action: 'update',
+      cartId: cartId,
+      productId: productId,
+      quantity: quantity,
+    ));
   }
 
-  static Future<RetailerCart> removeCartItem({
+  static Future<RetailerCart?> removeCartItem({
     required int cartId,
     required int productId,
   }) async {
-    await _api.post(
-      'v1/retailer/cart',
-      body: {
-        'action': 'remove',
-        'cart_id': cartId,
-        'product_id': productId,
-      },
-    );
-    return getCart();
+    ApiException? last;
+    for (final action in const ['remove', 'delete']) {
+      try {
+        return await _postCart(_cartBody(
+          action: action,
+          cartId: cartId,
+          productId: productId,
+        ));
+      } on ApiException catch (e) {
+        last = e;
+      }
+    }
+    if (last != null) throw last;
+    return null;
   }
 }

@@ -22,6 +22,7 @@ class _CartScreenState extends State<CartScreen> {
   final _couponCtrl = TextEditingController();
   final Map<int, int> _appliedByProduct = {};
   final Set<int> _busy = {};
+  bool _discarding = false;
 
   @override
   void initState() {
@@ -200,51 +201,134 @@ class _CartScreenState extends State<CartScreen> {
     return out;
   }
 
-  Future<void> _applyCart(Future<RetailerCart> request, int cartId) async {
-    if (_busy.contains(cartId)) return;
-    setState(() => _busy.add(cartId));
-    try {
-      final next = await request;
-      if (!mounted) return;
-      setState(() {
-        _data = next;
-        _pruneApplied();
-      });
-    } on ApiException catch (e) {
-      try {
-        await _load();
-      } on ApiException {
-        if (mounted) showStatus(context, e.message, error: true);
-      }
-    } finally {
-      if (mounted) setState(() => _busy.remove(cartId));
-    }
+  void _setCart(RetailerCart cart) {
+    _data = cart;
+    _pruneApplied();
+  }
+
+  void _setItems(List<CartItem> items) {
+    _setCart(RetailerCart(
+      itemsCount: items.length,
+      items: items,
+      summary: _data?.summary ?? const CartSummary(),
+    ));
   }
 
   Future<void> _changeQty(CartItem item, int delta) async {
+    if (_busy.contains(item.productId)) return;
     final next = item.quantity + delta;
     if (next < 1) {
       await _removeItem(item);
       return;
     }
-    await _applyCart(
-      RetailerService.updateCartItem(
-        cartId: item.cartId,
-        productId: item.productId,
-        quantity: next,
-      ),
-      item.cartId,
-    );
+    if (item.stock > 0 && next > item.stock) {
+      showStatus(context, 'Only ${item.stock} case${item.stock == 1 ? '' : 's'} available.', error: true);
+      return;
+    }
+    final previous = _data;
+    setState(() {
+      _busy.add(item.productId);
+      _setItems([
+        for (final e in _data?.items ?? const <CartItem>[])
+          if (e.productId == item.productId) e.copyWith(quantity: next) else e,
+      ]);
+    });
+    try {
+      // Server cart.php supports only action plus/minus (step of 1).
+      await ApiClient.instance.post(
+        'v1/retailer/cart',
+        body: {
+          'action': delta > 0 ? 'plus' : 'minus',
+          'cart_id': item.cartId,
+        },
+      );
+      // plus/minus return data:null, so reload cart to get the real qty.
+      final cart = await RetailerService.getCart();
+      if (!mounted) return;
+      setState(() => _setCart(cart));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _data = previous);
+      showStatus(context, e.message, error: true);
+    } finally {
+      if (mounted) setState(() => _busy.remove(item.productId));
+    }
   }
 
   Future<void> _removeItem(CartItem item) async {
-    await _applyCart(
-      RetailerService.removeCartItem(
-        cartId: item.cartId,
-        productId: item.productId,
+    if (_busy.contains(item.productId)) return;
+    final previous = _data;
+    setState(() {
+      _busy.add(item.productId);
+      _setItems([
+        for (final e in _data?.items ?? const <CartItem>[])
+          if (e.productId != item.productId) e,
+      ]);
+    });
+    try {
+      await ApiClient.instance.post(
+        'v1/retailer/cart',
+        body: {'action': 'delete', 'cart_id': item.cartId},
+      );
+      // delete returns data:null, so reload cart to show the real state.
+      final cart = await RetailerService.getCart();
+      if (!mounted) return;
+      setState(() => _setCart(cart));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _data = previous);
+      showStatus(context, e.message, error: true);
+    } finally {
+      if (mounted) setState(() => _busy.remove(item.productId));
+    }
+  }
+
+  Future<void> _discardCart() async {
+    if (_busy.isNotEmpty || _discarding) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Discard cart?'),
+        content: const Text('All items will be removed from your cart.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text(
+              'Discard',
+              style: TextStyle(color: AppColors.dangerText),
+            ),
+          ),
+        ],
       ),
-      item.cartId,
     );
+    if (ok != true || !mounted) return;
+    setState(() => _discarding = true);
+    try {
+      await ApiClient.instance.post(
+        'v1/retailer/cart',
+        body: {'action': 'discard'},
+      );
+      final cart = await RetailerService.getCart();
+      if (!mounted) return;
+      setState(() {
+        _appliedByProduct.clear();
+        _setCart(cart);
+      });
+      if (cart.items.isEmpty) {
+        showStatus(context, 'Cart discarded.');
+      } else {
+        showStatus(context, 'Server did not clear the cart.', error: true);
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      showStatus(context, e.message, error: true);
+    } finally {
+      if (mounted) setState(() => _discarding = false);
+    }
   }
 
   _LineTotals _line(CartItem item) {
@@ -300,6 +384,24 @@ class _CartScreenState extends State<CartScreen> {
           ),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
+        actions: [
+          if (!empty)
+            IconButton(
+              tooltip: 'Discard cart',
+              onPressed: (_busy.isEmpty && !_discarding) ? _discardCart : null,
+              icon: _discarding
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(
+                      Icons.delete_sweep_outlined,
+                      color: AppColors.text,
+                    ),
+            ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: _buildBody(),
       bottomNavigationBar: empty ? null : _bottom(_totals()),
@@ -333,6 +435,7 @@ class _CartScreenState extends State<CartScreen> {
     }
 
     final items = _data?.items ?? const <CartItem>[];
+    final groups = _groupedItems();
     return RefreshIndicator(
       onRefresh: _load,
       child: items.isEmpty
@@ -354,27 +457,127 @@ class _CartScreenState extends State<CartScreen> {
                 ),
               ],
             )
-          : ListView.separated(
+          : ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-              itemCount: items.length,
-              separatorBuilder: (context, i) => const SizedBox(height: 12),
-              itemBuilder: (context, i) {
-                final item = items[i];
-                final offer = _offerById(_appliedByProduct[item.productId]);
-                return _CartItemCard(
-                  item: item,
-                  offer: offer,
-                  hints: _hintsFor(item),
-                  line: _line(item),
-                  busy: _busy.contains(item.cartId),
-                  onMinus: () => _changeQty(item, -1),
-                  onPlus: () => _changeQty(item, 1),
-                  onRemove: () => _removeItem(item),
-                );
-              },
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.card,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    children: [
+                      for (var g = 0; g < groups.length; g++) ...[
+                        if (g > 0)
+                          const Divider(height: 1, color: AppColors.border),
+                        _schemeHeader(groups[g]),
+                        for (var i = 0; i < groups[g].items.length; i++) ...[
+                          if (i > 0 || groups[g].offer != null || groups[g].hints.isNotEmpty)
+                            const Divider(height: 1, color: AppColors.border),
+                          _CartItemRow(
+                            item: groups[g].items[i],
+                            line: _line(groups[g].items[i]),
+                            busy: _busy.contains(groups[g].items[i].productId),
+                            onMinus: () => _changeQty(groups[g].items[i], -1),
+                            onPlus: () => _changeQty(groups[g].items[i], 1),
+                            onRemove: () => _removeItem(groups[g].items[i]),
+                          ),
+                        ],
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _couponBar(),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: _openCoupons,
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.blue,
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      minimumSize: const Size(0, 36),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text(
+                      'View Coupons',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                _summaryCard(_totals()),
+              ],
             ),
     );
+  }
+
+  int _schemeKeyFor(CartItem item) {
+    final applied = _appliedByProduct[item.productId];
+    if (applied != null && applied > 0) return applied;
+    for (final o in _offers) {
+      if (!o.isAllProducts && o.productId == item.productId) return o.id;
+    }
+    return 0;
+  }
+
+  List<_CartGroup> _groupedItems() {
+    final items = _data?.items ?? const <CartItem>[];
+    final buckets = <int, List<CartItem>>{};
+    final order = <int>[];
+    for (final item in items) {
+      final key = _schemeKeyFor(item);
+      if (!buckets.containsKey(key)) {
+        buckets[key] = [];
+        order.add(key);
+      }
+      buckets[key]!.add(item);
+    }
+    return [
+      for (final k in order)
+        _CartGroup(
+          offer: k == 0 ? null : _offerById(k),
+          applied: k != 0 &&
+              buckets[k]!.any((e) => _appliedByProduct[e.productId] == k),
+          items: buckets[k]!,
+          hints: k == 0
+              ? const []
+              : [
+                  for (final item in buckets[k]!)
+                    ..._hintsFor(item),
+                ],
+        ),
+    ];
+  }
+
+  Widget _schemeHeader(_CartGroup group) {
+    if (group.offer != null) {
+      var savings = 0.0;
+      if (group.applied) {
+        for (final item in group.items) {
+          savings += _line(item).savings;
+        }
+      }
+      return _AppliedBanner(offer: group.offer!, savings: savings);
+    }
+    if (group.hints.isNotEmpty) {
+      final seen = <String>{};
+      final unique = <_Hint>[];
+      for (final h in group.hints) {
+        if (seen.add(h.text)) unique.add(h);
+      }
+      return _HintBanner(hints: unique);
+    }
+    return const SizedBox.shrink();
+  }
+
+  void _proceedToCheckout() {
+    if (_busy.isNotEmpty) return;
+    // TODO: open checkout screen here (API: GET/POST v1/retailer/checkout).
+    showStatus(context, 'Checkout screen not connected yet.', error: true);
   }
 
   Widget _bottom(_Totals totals) {
@@ -385,27 +588,48 @@ class _CartScreenState extends State<CartScreen> {
           color: AppColors.card,
           border: Border(top: BorderSide(color: AppColors.border)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        child: Row(
           children: [
-            _couponBar(),
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: _openCoupons,
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.blue,
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  minimumSize: const Size(0, 36),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Total',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.muted,
+                  ),
                 ),
-                child: const Text(
-                  'View Coupons',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                const SizedBox(height: 2),
+                Text(
+                  formatInr(totals.net),
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.text,
+                  ),
+                ),
+              ],
+            ),
+            const Spacer(),
+            FilledButton(
+              onPressed: _busy.isEmpty ? _proceedToCheckout : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.blue,
+                minimumSize: const Size(0, 46),
+                padding: const EdgeInsets.symmetric(horizontal: 22),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
+              child: const Text('Proceed to Checkout'),
             ),
-            _summaryCard(totals),
           ],
         ),
       ),
@@ -530,20 +754,29 @@ class _Hint {
   const _Hint({required this.text, required this.minQty});
 }
 
-class _CartItemCard extends StatelessWidget {
-  final CartItem item;
+class _CartGroup {
   final RetailerSchemeOffer? offer;
+  final bool applied;
+  final List<CartItem> items;
   final List<_Hint> hints;
+  const _CartGroup({
+    required this.offer,
+    required this.applied,
+    required this.items,
+    required this.hints,
+  });
+}
+
+class _CartItemRow extends StatelessWidget {
+  final CartItem item;
   final _LineTotals line;
   final bool busy;
   final VoidCallback onMinus;
   final VoidCallback onPlus;
   final VoidCallback onRemove;
 
-  const _CartItemCard({
+  const _CartItemRow({
     required this.item,
-    required this.offer,
-    required this.hints,
     required this.line,
     required this.busy,
     required this.onMinus,
@@ -554,22 +787,9 @@ class _CartItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final photo = (item.photoUrl ?? '').trim();
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        children: [
-          if (offer != null)
-            _AppliedBanner(offer: offer!, savings: line.savings)
-          else if (hints.isNotEmpty)
-            _HintBanner(hints: hints),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
-            child: Row(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+      child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 ClipRRect(
@@ -613,14 +833,13 @@ class _CartItemCard extends StatelessWidget {
                               ),
                             ),
                           ),
-                          SizedBox(
-                            width: 36,
-                            height: 36,
-                            child: IconButton(
-                              tooltip: 'Remove',
-                              onPressed: busy ? null : onRemove,
-                              padding: EdgeInsets.zero,
-                              icon: const Icon(
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: busy ? null : onRemove,
+                            child: const SizedBox(
+                              width: 36,
+                              height: 36,
+                              child: Icon(
                                 Icons.delete_outline_rounded,
                                 size: 20,
                                 color: AppColors.muted,
@@ -685,9 +904,6 @@ class _CartItemCard extends StatelessWidget {
                 ),
               ],
             ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -828,50 +1044,53 @@ class _QtyStepper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 36,
-      decoration: BoxDecoration(
-        color: AppColors.inputBg,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _stepBtn(Icons.remove, onMinus, enabled: !busy),
-          SizedBox(
-            width: 28,
-            child: Center(
-              child: busy
-                  ? const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Text(
-                      '$quantity',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.text,
+    return Material(
+      color: AppColors.inputBg,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        height: 36,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _stepBtn(Icons.remove, onMinus, enabled: !busy),
+            SizedBox(
+              width: 28,
+              child: Center(
+                child: busy
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(
+                        '$quantity',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.text,
+                        ),
                       ),
-                    ),
+              ),
             ),
-          ),
-          _stepBtn(Icons.add, onPlus, enabled: !busy),
-        ],
+            _stepBtn(Icons.add, onPlus, enabled: !busy),
+          ],
+        ),
       ),
     );
   }
 
   Widget _stepBtn(IconData icon, VoidCallback onTap, {required bool enabled}) {
-    return SizedBox(
-      width: 36,
-      height: 36,
-      child: IconButton(
-        onPressed: enabled ? onTap : null,
-        padding: EdgeInsets.zero,
-        icon: Icon(icon, size: 16, color: enabled ? AppColors.text : AppColors.muted),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: enabled ? onTap : null,
+      child: SizedBox(
+        width: 36,
+        height: 36,
+        child: Icon(icon, size: 16, color: enabled ? AppColors.text : AppColors.muted),
       ),
     );
   }

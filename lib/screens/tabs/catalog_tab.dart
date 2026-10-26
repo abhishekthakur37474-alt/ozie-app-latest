@@ -226,14 +226,6 @@ class CatalogTabState extends State<CatalogTab>
     }
   }
 
-  Future<int?> _cartIdFor(int productId) async {
-    final cached = _cartIds[productId];
-    if (cached != null) return cached;
-    final cart = await RetailerService.getCart();
-    _cacheCartIds(cart);
-    return _cartIds[productId];
-  }
-
   void _cacheCartIds(RetailerCart cart) {
     _cartIds
       ..clear()
@@ -242,24 +234,19 @@ class CatalogTabState extends State<CatalogTab>
 
   Future<void> _decCart(ProductItem p) async {
     if (_busy.contains(p.id) || p.cartQuantity <= 0) return;
+    final nextQty = p.cartQuantity - 1;
     setState(() => _busy.add(p.id));
     try {
-      final cartId = await _cartIdFor(p.id);
-      if (cartId == null) {
-        if (mounted) {
-          showStatus(context, 'Item not found in cart. Pull to refresh.', error: true);
-        }
-        return;
-      }
-      final nextQty = p.cartQuantity - 1;
-      final RetailerCart cart = nextQty < 1
+      final cartId = _cartIds[p.id] ?? 0;
+      final cart = nextQty < 1
           ? await RetailerService.removeCartItem(cartId: cartId, productId: p.id)
           : await RetailerService.updateCartItem(
               cartId: cartId,
               productId: p.id,
               quantity: nextQty,
             );
-      _cacheCartIds(cart);
+      if (cart != null) _cacheCartIds(cart);
+      if (nextQty < 1) _cartIds.remove(p.id);
       if (!mounted) return;
       setState(() {
         _data = _replaceProduct(
@@ -268,7 +255,8 @@ class CatalogTabState extends State<CatalogTab>
             availableStock: p.availableStock + 1,
             isOutOfStock: false,
           ),
-          cartCount: cart.items.length,
+          cartCount: cart?.itemsCount ??
+              ((_data?.cartCount ?? 1) - (nextQty < 1 ? 1 : 0)),
         );
       });
     } on ApiException catch (e) {

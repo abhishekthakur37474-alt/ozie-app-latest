@@ -81,23 +81,32 @@ class ApiClient {
   Future<Map<String, dynamic>> post(
     String path, {
     Map<String, dynamic>? body,
+    Map<String, dynamic>? query,
     bool auth = true,
+    bool form = false,
   }) =>
-      _send('POST', path, body: body, auth: auth);
+      _send('POST', _withQuery(path, query), body: body, auth: auth, form: form);
 
   Future<Map<String, dynamic>> _send(
     String method,
     String path, {
     Map<String, dynamic>? body,
     bool auth = true,
+    bool form = false,
   }) async {
     try {
+      final headers = <String, dynamic>{
+        if (auth && hasToken) 'Authorization': 'Bearer $_token',
+      };
       final res = await _dio.request<dynamic>(
         path,
         data: method == 'POST' ? (body ?? <String, dynamic>{}) : null,
         options: Options(
           method: method,
-          headers: (auth && hasToken) ? {'Authorization': 'Bearer $_token'} : null,
+          contentType: form
+              ? Headers.formUrlEncodedContentType
+              : Headers.jsonContentType,
+          headers: headers,
         ),
       );
       var data = res.data;

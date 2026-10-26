@@ -1393,18 +1393,36 @@ class CartItem {
   });
 
   factory CartItem.fromJson(Map<String, dynamic> j) => CartItem(
-        cartId: _toInt(j['cart_id']),
-        productId: _toInt(j['product_id']),
-        productName: _toStr(j['product_name']) ?? '',
-        quantity: _toInt(j['quantity']),
-        unitPrice: _toDouble(j['unit_price']),
-        itemGross: _toDouble(j['item_gross']),
-        itemSavings: _toDouble(j['item_savings']),
-        itemFinal: _toDouble(j['item_final']),
+        cartId: _toInt(_first(j, ['cart_id', 'cart_item_id', 'item_id', 'row_id', 'id'])),
+        productId: _toInt(_first(j, ['product_id', 'productId'])),
+        productName: _toStr(_first(j, ['product_name', 'name'])) ?? '',
+        quantity: _toInt(_first(j, ['quantity', 'qty', 'cart_quantity'])),
+        unitPrice: _toDouble(_first(j, ['unit_price', 'price'])),
+        itemGross: _toDouble(_first(j, ['item_gross', 'gross'])),
+        itemSavings: _toDouble(_first(j, ['item_savings', 'savings'])),
+        itemFinal: _toDouble(_first(j, ['item_final', 'final', 'net'])),
         isReturn: j['is_return'] == true,
-        stock: _toInt(j['stock']),
-        photoUrl: _toStr(j['photo_url']),
+        stock: _toInt(_first(j, ['stock', 'available_stock'])),
+        photoUrl: _toStr(_first(j, ['photo_url', 'image', 'image_url'])),
       );
+
+  CartItem copyWith({int? quantity}) {
+    final q = quantity ?? this.quantity;
+    final gross = unitPrice * q;
+    return CartItem(
+      cartId: cartId,
+      productId: productId,
+      productName: productName,
+      quantity: q,
+      unitPrice: unitPrice,
+      itemGross: gross,
+      itemSavings: itemSavings,
+      itemFinal: gross,
+      isReturn: isReturn,
+      stock: stock,
+      photoUrl: photoUrl,
+    );
+  }
 }
 
 class CartSummary {
