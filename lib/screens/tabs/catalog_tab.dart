@@ -4,6 +4,7 @@ import '../../core/api_client.dart';
 import '../../core/models.dart';
 import '../../core/retailer_service.dart';
 import '../../widgets/app_widgets.dart';
+import '../../widgets/product_qty_button.dart';
 
 class CatalogTab extends StatefulWidget {
   final int? highlightProductId;
@@ -34,6 +35,7 @@ class CatalogTabState extends State<CatalogTab>
   String _brand = '';
   bool _wishlistOnly = false;
   final Set<int> _busy = {};
+  final Map<int, int> _cartIds = {}; // productId -> cartId (for minus/remove)
 
   static const int _pageSize = 12;
 
@@ -89,6 +91,7 @@ class CatalogTabState extends State<CatalogTab>
   Future<void> _load({bool reset = false, int? page, bool force = false}) async {
     if (reset) {
       _page = 1;
+      _cartIds.clear();
       if (_data == null) {
         setState(() {
           _loading = true;
@@ -216,7 +219,58 @@ class CatalogTabState extends State<CatalogTab>
           cartCount: r.cartCount,
         );
       });
-      showStatus(context, 'Added to cart');
+    } on ApiException catch (e) {
+      if (mounted) showStatus(context, e.message, error: true);
+    } finally {
+      if (mounted) setState(() => _busy.remove(p.id));
+    }
+  }
+
+  Future<int?> _cartIdFor(int productId) async {
+    final cached = _cartIds[productId];
+    if (cached != null) return cached;
+    final cart = await RetailerService.getCart();
+    _cacheCartIds(cart);
+    return _cartIds[productId];
+  }
+
+  void _cacheCartIds(RetailerCart cart) {
+    _cartIds
+      ..clear()
+      ..addEntries(cart.items.map((e) => MapEntry(e.productId, e.cartId)));
+  }
+
+  Future<void> _decCart(ProductItem p) async {
+    if (_busy.contains(p.id) || p.cartQuantity <= 0) return;
+    setState(() => _busy.add(p.id));
+    try {
+      final cartId = await _cartIdFor(p.id);
+      if (cartId == null) {
+        if (mounted) {
+          showStatus(context, 'Item not found in cart. Pull to refresh.', error: true);
+        }
+        return;
+      }
+      final nextQty = p.cartQuantity - 1;
+      final RetailerCart cart = nextQty < 1
+          ? await RetailerService.removeCartItem(cartId: cartId, productId: p.id)
+          : await RetailerService.updateCartItem(
+              cartId: cartId,
+              productId: p.id,
+              quantity: nextQty,
+            );
+      _cacheCartIds(cart);
+      if (!mounted) return;
+      setState(() {
+        _data = _replaceProduct(
+          p.copyWith(
+            cartQuantity: nextQty < 1 ? 0 : nextQty,
+            availableStock: p.availableStock + 1,
+            isOutOfStock: false,
+          ),
+          cartCount: cart.items.length,
+        );
+      });
     } on ApiException catch (e) {
       if (mounted) showStatus(context, e.message, error: true);
     } finally {
@@ -296,7 +350,7 @@ class CatalogTabState extends State<CatalogTab>
                   crossAxisCount: 2,
                   mainAxisSpacing: 12,
                   crossAxisSpacing: 12,
-                  childAspectRatio: 0.62,
+                  childAspectRatio: 0.74,
                 ),
                 delegate: SliverChildBuilderDelegate(
                   (context, i) => _ProductCard(
@@ -306,6 +360,7 @@ class CatalogTabState extends State<CatalogTab>
                     highlighted: widget.highlightProductId == d.products[i].id,
                     onWish: () => _toggleWish(d.products[i]),
                     onAdd: () => _addCart(d.products[i]),
+                    onMinus: () => _decCart(d.products[i]),
                   ),
                   childCount: d.products.length,
                 ),
@@ -323,57 +378,211 @@ class CatalogTabState extends State<CatalogTab>
     );
   }
 
+  int get _activeFilterCount =>
+      (_categoryId != 0 ? 1 : 0) + (_brand.isNotEmpty ? 1 : 0);
+
+  void _applyFilters(int categoryId, String brand) {
+    setState(() {
+      _categoryId = categoryId;
+      _brand = brand;
+    });
+    _load(reset: true);
+  }
+
   Widget _filters(ProductsCatalog d) {
+    final allSelected = _categoryId == 0 && _brand.isEmpty;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-        child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          if (d.categories.isNotEmpty) ...[
-            SizedBox(
+          Expanded(
+            child: SizedBox(
               height: 36,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: [
-                  _chip('All', _categoryId == 0, () {
-                    setState(() => _categoryId = 0);
-                    _load(reset: true);
-                  }),
-                  ...d.categories.map(
-                    (c) => _chip(c.name, _categoryId == c.id, () {
-                      setState(() => _categoryId = c.id);
-                      _load(reset: true);
-                    }),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          if (d.brands.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 36,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  _chip('All brands', _brand.isEmpty, () {
-                    setState(() => _brand = '');
-                    _load(reset: true);
-                  }),
+                  _chip('All', allSelected, () => _applyFilters(0, '')),
                   ...d.brands.map(
-                    (b) => _chip(b, _brand == b, () {
-                      setState(() => _brand = b);
-                      _load(reset: true);
-                    }),
+                    (b) => _chip(
+                      b,
+                      _brand == b,
+                      () => _applyFilters(_categoryId, _brand == b ? '' : b),
+                    ),
                   ),
                 ],
               ),
             ),
-          ],
+          ),
+          const SizedBox(width: 8),
+          Badge(
+            isLabelVisible: _activeFilterCount > 0,
+            label: Text('$_activeFilterCount'),
+            child: Material(
+              color: AppColors.card,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+                side: BorderSide(
+                  color: _activeFilterCount > 0 ? AppColors.blue : AppColors.border,
+                ),
+              ),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => _openFilterSheet(d),
+                child: SizedBox(
+                  width: 36,
+                  height: 36,
+                  child: Icon(
+                    Icons.tune_rounded,
+                    size: 20,
+                    color: _activeFilterCount > 0 ? AppColors.blue : AppColors.text,
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
+
+  Future<void> _openFilterSheet(ProductsCatalog d) async {
+    var cat = _categoryId;
+    var brand = _brand;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(ctx).size.height * 0.8,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 8, 0),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Filters',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.text,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        icon: const Icon(Icons.close, color: AppColors.text),
+                      ),
+                    ],
+                  ),
+                ),
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (d.categories.isNotEmpty) ...[
+                          _sheetTitle('Category'),
+                          Wrap(
+                            children: [
+                              _chip('All', cat == 0, () => setSheet(() => cat = 0)),
+                              ...d.categories.map(
+                                (c) => _chip(
+                                  c.name,
+                                  cat == c.id,
+                                  () => setSheet(() => cat = c.id),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        if (d.brands.isNotEmpty) ...[
+                          _sheetTitle('Brand'),
+                          Wrap(
+                            children: [
+                              _chip('All brands', brand.isEmpty, () => setSheet(() => brand = '')),
+                              ...d.brands.map(
+                                (b) => _chip(
+                                  b,
+                                  brand == b,
+                                  () => setSheet(() => brand = b),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => setSheet(() {
+                            cat = 0;
+                            brand = '';
+                          }),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size(0, 44),
+                            foregroundColor: AppColors.text,
+                            side: const BorderSide(color: AppColors.border),
+                          ),
+                          child: const Text('Reset'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () {
+                            Navigator.of(ctx).pop();
+                            if (cat != _categoryId || brand != _brand) {
+                              _applyFilters(cat, brand);
+                            }
+                          },
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.blue,
+                            minimumSize: const Size(0, 44),
+                          ),
+                          child: const Text('Apply'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sheetTitle(String t) => Padding(
+        padding: const EdgeInsets.only(bottom: 8, top: 8),
+        child: Text(
+          t,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: AppColors.text,
+          ),
+        ),
+      );
 
   Widget _chip(String label, bool selected, VoidCallback onTap) {
     return Padding(
@@ -402,6 +611,7 @@ class _ProductCard extends StatelessWidget {
   final bool highlighted;
   final VoidCallback onWish;
   final VoidCallback onAdd;
+  final VoidCallback onMinus;
   const _ProductCard({
     super.key,
     required this.product,
@@ -409,6 +619,7 @@ class _ProductCard extends StatelessWidget {
     this.highlighted = false,
     required this.onWish,
     required this.onAdd,
+    required this.onMinus,
   });
 
   @override
@@ -457,6 +668,20 @@ class _ProductCard extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (p.cartQuantity > 0 || (p.canPurchase && !p.isOutOfStock))
+                  Positioned(
+                    right: 8,
+                    bottom: 8,
+                    child: ProductQtyButton(
+                      quantity: p.cartQuantity,
+                      busy: busy,
+                      canIncrease: p.canPurchase && !p.isOutOfStock,
+                      color: AppColors.blue,
+                      onAdd: onAdd,
+                      onPlus: onAdd,
+                      onMinus: onMinus,
+                    ),
+                  ),
                 if (p.discountPct > 0)
                   Positioned(
                     top: 8,
@@ -522,22 +747,6 @@ class _ProductCard extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 11,
                     color: p.isOutOfStock ? AppColors.dangerText : AppColors.muted,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: (!p.canPurchase || p.isOutOfStock || busy) ? null : onAdd,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: AppColors.blue,
-                      minimumSize: const Size(0, 34),
-                      padding: EdgeInsets.zero,
-                      textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                    ),
-                    child: busy
-                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : Text(p.cartQuantity > 0 ? 'Add more (${p.cartQuantity})' : 'Add to cart'),
                   ),
                 ),
               ],
