@@ -22,7 +22,6 @@ class _CartScreenState extends State<CartScreen> {
   final _couponCtrl = TextEditingController();
   final Map<int, int> _appliedByProduct = {};
   final Set<int> _busy = {};
-  bool _discarding = false;
 
   @override
   void initState() {
@@ -175,30 +174,39 @@ class _CartScreenState extends State<CartScreen> {
     showStatus(context, '${selected.schemeTitle} applied.');
   }
 
-  List<_Hint> _hintsFor(CartItem item) {
-    if (_appliedByProduct.containsKey(item.productId)) return const [];
-    final out = <_Hint>[];
-    for (final offer in _offers) {
-      if (!offer.isAllProducts) {
-        if (offer.productId != item.productId) continue;
-        if (item.quantity >= offer.minQty) continue;
-        final need = offer.minQty - item.quantity;
-        out.add(_Hint(
-          text:
-              'Add $need more case${need == 1 ? '' : 's'} for: ${offer.schemeTitle} (${_benefitLabel(offer)})',
-          minQty: offer.minQty,
-        ));
-        continue;
-      }
-      if (item.quantity >= offer.minQty) continue;
-      final need = offer.minQty - item.quantity;
-      out.add(_Hint(
-        text:
-            'Add $need more case${need == 1 ? '' : 's'} for: ${offer.schemeTitle} (${_benefitLabel(offer)})',
-        minQty: offer.minQty,
-      ));
+  bool _isApplied(RetailerSchemeOffer offer) {
+    if (offer.isAllProducts) return _appliedByProduct.values.contains(offer.id);
+    final pid = offer.productId;
+    if (pid == null) return false;
+    return _appliedByProduct[pid] == offer.id;
+  }
+
+  /// Quantity requirement met (cart has enough cases for this offer).
+  bool _isEligible(RetailerSchemeOffer offer) {
+    final items = _data?.items ?? const <CartItem>[];
+    if (items.isEmpty) return false;
+    if (offer.isAllProducts) {
+      return items.any((e) => e.quantity >= offer.minQty);
     }
-    return out;
+    final pid = offer.productId;
+    if (pid == null) return false;
+    final item = _itemForProduct(pid);
+    return item != null && item.quantity >= offer.minQty;
+  }
+
+  /// Offers shown as switches: eligible now, or already applied.
+  List<RetailerSchemeOffer> _switchOffers() => [
+        for (final o in _offers)
+          if (_isApplied(o) || _isEligible(o)) o,
+      ];
+
+  void _toggleOffer(RetailerSchemeOffer offer, bool on) {
+    if (on) {
+      final err = _applyOffer(offer);
+      if (err != null) showStatus(context, err, error: true);
+      return;
+    }
+    setState(() => _appliedByProduct.removeWhere((_, id) => id == offer.id));
   }
 
   void _setCart(RetailerCart cart) {
@@ -283,54 +291,6 @@ class _CartScreenState extends State<CartScreen> {
     }
   }
 
-  Future<void> _discardCart() async {
-    if (_busy.isNotEmpty || _discarding) return;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Discard cart?'),
-        content: const Text('All items will be removed from your cart.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text(
-              'Discard',
-              style: TextStyle(color: AppColors.dangerText),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    setState(() => _discarding = true);
-    try {
-      await ApiClient.instance.post(
-        'v1/retailer/cart',
-        body: {'action': 'discard'},
-      );
-      final cart = await RetailerService.getCart();
-      if (!mounted) return;
-      setState(() {
-        _appliedByProduct.clear();
-        _setCart(cart);
-      });
-      if (cart.items.isEmpty) {
-        showStatus(context, 'Cart discarded.');
-      } else {
-        showStatus(context, 'Server did not clear the cart.', error: true);
-      }
-    } on ApiException catch (e) {
-      if (!mounted) return;
-      showStatus(context, e.message, error: true);
-    } finally {
-      if (mounted) setState(() => _discarding = false);
-    }
-  }
-
   _LineTotals _line(CartItem item) {
     final offer = _offerById(_appliedByProduct[item.productId]);
     final extra = offer == null
@@ -384,24 +344,6 @@ class _CartScreenState extends State<CartScreen> {
           ),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
-        actions: [
-          if (!empty)
-            IconButton(
-              tooltip: 'Discard cart',
-              onPressed: (_busy.isEmpty && !_discarding) ? _discardCart : null,
-              icon: _discarding
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(
-                      Icons.delete_sweep_outlined,
-                      color: AppColors.text,
-                    ),
-            ),
-          const SizedBox(width: 4),
-        ],
       ),
       body: _buildBody(),
       bottomNavigationBar: empty ? null : _bottom(_totals()),
@@ -461,37 +403,12 @@ class _CartScreenState extends State<CartScreen> {
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
               children: [
-                Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.card,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: Column(
-                    children: [
-                      for (var g = 0; g < groups.length; g++) ...[
-                        if (g > 0)
-                          const Divider(height: 1, color: AppColors.border),
-                        _schemeHeader(groups[g]),
-                        for (var i = 0; i < groups[g].items.length; i++) ...[
-                          if (i > 0 || groups[g].offer != null || groups[g].hints.isNotEmpty)
-                            const Divider(height: 1, color: AppColors.border),
-                          _CartItemRow(
-                            item: groups[g].items[i],
-                            line: _line(groups[g].items[i]),
-                            busy: _busy.contains(groups[g].items[i].productId),
-                            onMinus: () => _changeQty(groups[g].items[i], -1),
-                            onPlus: () => _changeQty(groups[g].items[i], 1),
-                            onRemove: () => _removeItem(groups[g].items[i]),
-                          ),
-                        ],
-                      ],
-                    ],
-                  ),
-                ),
+                for (var g = 0; g < groups.length; g++) ...[
+                  if (g > 0) const SizedBox(height: 12),
+                  _groupBlock(groups[g]),
+                ],
                 const SizedBox(height: 16),
-                _couponBar(),
+                _couponSection(),
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
@@ -543,35 +460,155 @@ class _CartScreenState extends State<CartScreen> {
           applied: k != 0 &&
               buckets[k]!.any((e) => _appliedByProduct[e.productId] == k),
           items: buckets[k]!,
-          hints: k == 0
-              ? const []
-              : [
-                  for (final item in buckets[k]!)
-                    ..._hintsFor(item),
-                ],
         ),
     ];
   }
 
+  /// One separate card per offer group: banner (applied / add more / eligible)
+  /// on top, then the items of that group.
+  Widget _groupBlock(_CartGroup group) {
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+        alignment: Alignment.topCenter,
+        child: Column(
+          children: [
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              child: KeyedSubtree(
+                key: ValueKey(_headerState(group)),
+                child: _schemeHeader(group),
+              ),
+            ),
+            for (var i = 0; i < group.items.length; i++) ...[
+              if (i > 0 || group.offer != null)
+                const Divider(height: 1, color: AppColors.border),
+              _CartItemRow(
+                item: group.items[i],
+                line: _line(group.items[i]),
+                busy: _busy.contains(group.items[i].productId),
+                onMinus: () => _changeQty(group.items[i], -1),
+                onPlus: () => _changeQty(group.items[i], 1),
+                onRemove: () => _removeItem(group.items[i]),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _headerState(_CartGroup group) {
+    final offer = group.offer;
+    if (offer == null) return 'none';
+    if (group.applied) return 'applied-${offer.id}';
+    final short = group.items.any((e) => e.quantity < offer.minQty);
+    return short ? 'short-${offer.id}' : 'eligible-${offer.id}';
+  }
+
   Widget _schemeHeader(_CartGroup group) {
-    if (group.offer != null) {
+    final offer = group.offer;
+    if (offer == null) return const SizedBox.shrink();
+
+    if (group.applied) {
       var savings = 0.0;
-      if (group.applied) {
-        for (final item in group.items) {
-          savings += _line(item).savings;
-        }
+      for (final item in group.items) {
+        savings += _line(item).savings;
       }
-      return _AppliedBanner(offer: group.offer!, savings: savings);
+      return _AppliedBanner(offer: offer, savings: savings);
     }
-    if (group.hints.isNotEmpty) {
-      final seen = <String>{};
-      final unique = <_Hint>[];
-      for (final h in group.hints) {
-        if (seen.add(h.text)) unique.add(h);
-      }
-      return _HintBanner(hints: unique);
+
+    final short = group.items.where((e) => e.quantity < offer.minQty).toList();
+    if (short.isNotEmpty) {
+      final need = offer.minQty - short.first.quantity;
+      final title = offer.schemeTitle.trim().isEmpty
+          ? offer.originType
+          : offer.schemeTitle.trim();
+      return _HintBanner(
+        hints: [
+          _Hint(
+            text:
+                'Add $need more case${need == 1 ? '' : 's'} to avail this coupon · $title (${_benefitLabel(offer)})',
+            minQty: offer.minQty,
+          ),
+        ],
+      );
     }
-    return const SizedBox.shrink();
+
+    return _EligibleBanner(
+      offer: offer,
+      benefit: _benefitLabel(offer),
+      onApply: () => _toggleOffer(offer, true),
+    );
+  }
+
+  Widget _couponSection() {
+    final offers = _switchOffers();
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
+        alignment: Alignment.topCenter,
+        child: Column(
+          children: [
+            _couponCodeRow(),
+            for (final offer in offers) ...[
+              const Divider(height: 1, color: AppColors.border),
+              _CouponSwitchRow(
+                offer: offer,
+                benefit: _benefitLabel(offer),
+                applied: _isApplied(offer),
+                onChanged: (v) => _toggleOffer(offer, v),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _couponCodeRow() {
+    return Container(
+      height: 52,
+      padding: const EdgeInsets.only(left: 14, right: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _couponCtrl,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _applyFromBar(),
+              decoration: const InputDecoration(
+                hintText: 'Apply Coupon Code',
+                hintStyle: TextStyle(fontSize: 14, color: AppColors.muted),
+                border: InputBorder.none,
+                isDense: true,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: _applyFromBar,
+            child: const Text(
+              'Apply',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _proceedToCheckout() {
@@ -632,42 +669,6 @@ class _CartScreenState extends State<CartScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _couponBar() {
-    return Container(
-      height: 48,
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      padding: const EdgeInsets.only(left: 14, right: 6),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _couponCtrl,
-              textInputAction: TextInputAction.done,
-              onSubmitted: (_) => _applyFromBar(),
-              decoration: const InputDecoration(
-                hintText: 'Apply Coupon Code',
-                hintStyle: TextStyle(fontSize: 14, color: AppColors.muted),
-                border: InputBorder.none,
-                isDense: true,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: _applyFromBar,
-            child: const Text(
-              'Apply',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -758,12 +759,10 @@ class _CartGroup {
   final RetailerSchemeOffer? offer;
   final bool applied;
   final List<CartItem> items;
-  final List<_Hint> hints;
   const _CartGroup({
     required this.offer,
     required this.applied,
     required this.items,
-    required this.hints,
   });
 }
 
@@ -1091,6 +1090,130 @@ class _QtyStepper extends StatelessWidget {
         width: 36,
         height: 36,
         child: Icon(icon, size: 16, color: enabled ? AppColors.text : AppColors.muted),
+      ),
+    );
+  }
+}
+
+class _EligibleBanner extends StatelessWidget {
+  final RetailerSchemeOffer offer;
+  final String benefit;
+  final VoidCallback onApply;
+  const _EligibleBanner({
+    required this.offer,
+    required this.benefit,
+    required this.onApply,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final title = offer.schemeTitle.trim().isEmpty
+        ? offer.originType
+        : offer.schemeTitle.trim();
+    return Container(
+      width: double.infinity,
+      color: const Color(0xFFEFF6FF),
+      padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+      child: Row(
+        children: [
+          const Icon(Icons.local_offer_outlined, size: 16, color: AppColors.blue),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$title · $benefit available',
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.blue,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: onApply,
+            style: TextButton.styleFrom(
+              minimumSize: const Size(0, 32),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: const Text(
+              'Apply',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CouponSwitchRow extends StatelessWidget {
+  final RetailerSchemeOffer offer;
+  final String benefit;
+  final bool applied;
+  final ValueChanged<bool> onChanged;
+  const _CouponSwitchRow({
+    required this.offer,
+    required this.benefit,
+    required this.applied,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final title = offer.schemeTitle.trim().isEmpty
+        ? offer.originType
+        : offer.schemeTitle.trim();
+    final scope = offer.isAllProducts ? 'All products' : offer.productName;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+      color: applied ? const Color(0xFFF0FBF6) : AppColors.card,
+      padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Apply $title',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.text,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 200),
+                  child: Text(
+                    applied ? 'Applied · $benefit' : '$benefit · $scope',
+                    key: ValueKey(applied),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: applied ? AppColors.successText : AppColors.muted,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: applied,
+            onChanged: onChanged,
+            thumbColor: WidgetStateProperty.resolveWith(
+              (states) => states.contains(WidgetState.selected)
+                  ? Colors.white
+                  : null,
+            ),
+            trackColor: WidgetStateProperty.resolveWith(
+              (states) => states.contains(WidgetState.selected)
+                  ? AppColors.successText
+                  : null,
+            ),
+          ),
+        ],
       ),
     );
   }

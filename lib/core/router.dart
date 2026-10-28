@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../screens/generic_home_screen.dart';
 import '../screens/main_shell.dart';
 import '../screens/login_screen.dart';
 import '../screens/role_selection_screen.dart';
@@ -9,16 +10,22 @@ import 'models.dart';
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+/// User types that already have a dedicated dashboard in the app.
+const Set<String> kDedicatedDashboards = {'retailer'};
+
 Widget screenFor(Session s) {
+  final type = (s.user.userType ?? '').toLowerCase();
+
   switch (s.nextScreen) {
-    case 'dashboard':
-      return MainShell(session: s);
     case 'wait_for_approval':
       return WaitForApprovalScreen(session: s);
     case 'role_selection':
       return RoleSelectionScreen(session: s);
+    case 'dashboard':
     default:
-      return const LoginScreen();
+      // Dedicated screen exists -> use it. Otherwise generic home.
+      if (kDedicatedDashboards.contains(type)) return MainShell(session: s);
+      return GenericHomeScreen(session: s);
   }
 }
 
